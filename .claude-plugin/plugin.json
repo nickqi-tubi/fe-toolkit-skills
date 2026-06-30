@@ -1,7 +1,7 @@
 {
   "name": "fe-toolkit",
-  "version": "0.1.0",
-  "description": "Frontend dev workflow: Jira ticket -> Figma design -> plan mode -> implement -> conventional commit.",
+  "version": "0.2.0",
+  "description": "Frontend dev workflow: Jira ticket -> Figma design -> plan mode -> implement -> conventional commit, plus Web Vitals optimization experiments from Databricks field data.",
   "author": {
     "name": "Tubi FE"
   },
