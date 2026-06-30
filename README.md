@@ -8,6 +8,8 @@ A Claude Code plugin that packages Tubi FE's best-practice frontend development 
                 ... implement ...
 /fe-toolkit:review                ->  FE-focused diff review (a11y / perf / types / tests)
 /fe-toolkit:commit                ->  draft a Conventional Commits v1.0.0 message
+
+/fe-toolkit:web-vitals-experiment ->  analyze P75 Web Vitals (Databricks) + propose a per-device experiment
 ```
 
 It bundles:
@@ -15,7 +17,7 @@ It bundles:
 - The **Atlassian Rovo MCP** inline (Streamable HTTP), so Jira/Confluence reads work out of the box with one OAuth.
 - The official **Figma plugin** as a dependency, so Figma reads (and Figma's own skills) come along for free with one OAuth.
 - Subagents: `jira-reader`, `figma-reader`, `code-reviewer`.
-- Skills: `conventional-commit`, `save-plan`.
+- Skills: `conventional-commit`, `save-plan`, `web-vitals-experiment`.
 
 ## Install
 
@@ -72,7 +74,7 @@ Verify with:
 ```bash
 claude plugin list
 /mcp        # in a Claude Code session - should list `atlassian` and `figma`
-/plugin     # should show fe-toolkit enabled with 5 commands, 3 agents, 2 skills, 1 MCP server, 1 hook
+/plugin     # should show fe-toolkit enabled with 6 commands, 3 agents, 3 skills, 1 MCP server, 1 hook
 ```
 
 ## First-run auth
@@ -143,6 +145,10 @@ Diffs the current branch against `origin/main` (or the ref you pass) and dispatc
 
 Drafts a [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) message based on what is actually staged (or asks before staging more), shows it to you, then commits. Refuses `--no-verify`, refuses to commit obvious secret files, and never amends pushed commits.
 
+### `/fe-toolkit:web-vitals-experiment [routeId] [metric] [device]`
+
+Run this **inside the `adRise/www` repo**. It reads P75 Web Vitals field data from Databricks (`core_dev.dsa.perf_web_vitals_daily`), maps `dimension_key` to the ROUTE_IDs in `src/common/utils/webVitalsRoutes.ts`, and ranks the worst high-traffic `route x metric x device` targets against Google's Core Web Vitals P75 thresholds (LCP/INP/CLS headline; FCP/TTFB diagnostics). It then scouts the route's code paths, ranks optimization hypotheses, and writes a per-device (mobile and desktop are designed separately) experiment proposal to `docs/web-vitals/` grounded in www's `experimentV2` framework. It pauses at three approval gates (pick target, pick hypothesis, optional scaffold) and never changes www behavior, creates a Statsig experiment, or opens a PR. Requires an authenticated `databricks` CLI (`databricks auth login`) and a running SQL warehouse.
+
 ## Repo layout
 
 ```
@@ -156,7 +162,8 @@ fe-toolkit-skills/
 │   ├── save-plan.md                # /fe-toolkit:save-plan
 │   ├── commit.md                   # /fe-toolkit:commit
 │   ├── review.md                   # /fe-toolkit:review
-│   └── auth.md                     # /fe-toolkit:auth
+│   ├── auth.md                     # /fe-toolkit:auth
+│   └── web-vitals-experiment.md    # /fe-toolkit:web-vitals-experiment
 ├── agents/
 │   ├── jira-reader.md
 │   ├── figma-reader.md
@@ -166,8 +173,13 @@ fe-toolkit-skills/
 │   │   ├── SKILL.md
 │   │   ├── reference.md            # condensed spec
 │   │   └── scripts/commit.sh
-│   └── save-plan/
-│       └── SKILL.md
+│   ├── save-plan/
+│   │   └── SKILL.md
+│   └── web-vitals-experiment/
+│       ├── SKILL.md
+│       ├── reference.md            # CWV thresholds, SQL cookbook, experimentV2 pattern
+│       ├── scripts/query_web_vitals.sh
+│       └── templates/experiment-proposal.md
 ├── hooks/
 │   └── hooks.json                  # SessionStart -> scripts/check-auth.sh
 ├── scripts/
