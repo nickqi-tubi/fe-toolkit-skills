@@ -11,7 +11,7 @@ This skill **proposes**; it does not change `www` behavior, create Statsig exper
 
 ## Operating constraints
 
-- Read-only on `www` source. The single allowed write is the proposal doc(s) under `docs/web-vitals/` in the www repo.
+- Read-only on `www` source. The single allowed write is the proposal doc(s) under `doc/web-vitals/` in the www repo (www's existing docs convention is the singular `doc/`, not `docs/`).
 - Web platform only (`platform = 'web'`). The table has no other platform.
 - Headline target is one of the three **GSC-ranked** Core Web Vitals: **LCP, INP, CLS**. Treat **FCP** and **TTFB** as diagnostics / guardrails only — never as the headline metric.
 - Always keep mobile and desktop separate. If the user did not pin a device, produce one proposal per device for the chosen route+metric.
@@ -99,7 +99,17 @@ Recommend the best impact-to-risk hypothesis and ask the user to confirm or pick
 
 ### Step 4 - Render the experiment proposal
 
-Read the template at [templates/experiment-proposal.md](templates/experiment-proposal.md) and render **one doc per device** to `docs/web-vitals/<route-id>-<metric>-<device>.md` in the www repo (create `docs/web-vitals/` if needed). For experimentV2 config/selector shape and a worked example, consult [reference.md](reference.md).
+Read the template at [templates/experiment-proposal.md](templates/experiment-proposal.md) and render **one doc per device**. For experimentV2 config/selector shape and a worked example, consult [reference.md](reference.md).
+
+Write to www's existing docs directory (the singular `doc/`, not `docs/`):
+
+```
+doc/web-vitals/<route-id>-<metric>-<device>-<hypothesis-slug>.md
+```
+
+- `<hypothesis-slug>` is a short kebab-case summary of the chosen optimization (e.g. `priority-poster`, `defer-carousel-hydration`). It both names the experiment and prevents collisions when the same `route x metric x device` is revisited with a different hypothesis. Example: `doc/web-vitals/H-LCP-desktop-priority-poster.md`.
+- Create `doc/web-vitals/` if it does not exist.
+- **Before writing, check whether the target file already exists.** If it does, do not silently overwrite: show the user a one-line summary of the existing file and ask whether to overwrite it, write a new file with a `-<YYYY-MM-DD>` suffix, or cancel. Pick a different slug if the collision is actually a distinct hypothesis.
 
 Each proposal must include:
 
@@ -120,7 +130,8 @@ Only if the user explicitly asks, scaffold the **inert** experimentV2 wiring (no
 
 ## Hard rules
 
-- NEVER write outside `docs/web-vitals/` unless GATE 3 scaffolding was explicitly approved.
+- NEVER write outside `doc/web-vitals/` unless GATE 3 scaffolding was explicitly approved.
+- NEVER silently overwrite an existing proposal doc; confirm with the user first.
 - NEVER pick LCP/INP/CLS *and* a diagnostic (FCP/TTFB) as co-headline metrics — one headline CWV per experiment.
 - NEVER merge mobile and desktop into one proposal.
 - NEVER auto-start a stopped SQL warehouse; if none is running, tell the user.
