@@ -1,6 +1,6 @@
 # fe-toolkit
 
-A Claude Code plugin that wires up a complete frontend development workflow:
+A Claude Code plugin that packages Tubi FE's best-practice frontend development workflow into ready-to-use commands, agents, and skills:
 
 ```
 /fe-toolkit:plan-ticket FE-1234   ->  read Jira + Figma, produce a plan-mode plan
@@ -26,7 +26,7 @@ You need Claude Code 2.1+ with plugin support.
 Add this repo as the `tubi-fe` marketplace, then install the plugin:
 
 ```bash
-claude plugin marketplace add https://github.com/nickqi-tubi/fe-toolkit-demo
+claude plugin marketplace add https://github.com/nickqi-tubi/fe-toolkit-skills
 claude plugin install fe-toolkit@tubi-fe
 ```
 
@@ -37,8 +37,8 @@ The marketplace name (`tubi-fe`) and plugin name (`fe-toolkit`) are declared in 
 For iterating on the plugin itself (so you don't have to push to GitHub between every edit), register the local clone as a marketplace and install from it:
 
 ```bash
-git clone https://github.com/nickqi-tubi/fe-toolkit-demo.git
-claude plugin marketplace add ./fe-toolkit-demo
+git clone https://github.com/nickqi-tubi/fe-toolkit-skills.git
+claude plugin marketplace add ./fe-toolkit-skills
 claude plugin install fe-toolkit@tubi-fe
 ```
 
@@ -49,7 +49,7 @@ If you already added the GitHub copy of this marketplace, you'll hit a name coll
 ```bash
 # Option A: switch to the local copy
 claude plugin marketplace remove tubi-fe
-claude plugin marketplace add ./fe-toolkit-demo
+claude plugin marketplace add ./fe-toolkit-skills
 claude plugin install fe-toolkit@tubi-fe
 
 # Option B: keep the GitHub copy, refresh after each push
@@ -146,7 +146,7 @@ Drafts a [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1
 ## Repo layout
 
 ```
-fe-toolkit-demo/
+fe-toolkit-skills/
 ├── .claude-plugin/
 │   ├── plugin.json                 # plugin manifest (this plugin)
 │   └── marketplace.json            # marketplace catalog (publishes this plugin as tubi-fe)
@@ -186,7 +186,7 @@ fe-toolkit-demo/
 | Commit subject "too long" error | The `conventional-commit` skill caps subjects at 72 chars. Shorten or move detail into the body. |
 | `/fe-toolkit:plan-ticket` says "ticket key invalid" | Use the canonical form `[A-Z][A-Z0-9]+-\d+`, e.g. `FE-1234`, `WEB-12`. URLs are not accepted directly. |
 | `claude plugin marketplace add` errors with `Marketplace file not found at .../.claude-plugin/marketplace.json` | The repo on GitHub does not yet contain the marketplace catalog. Pull `main`, confirm `.claude-plugin/marketplace.json` exists, push, and retry. |
-| `claude plugin install ./fe-toolkit-demo` errors with `Plugin "./fe-toolkit-demo" not found in any configured marketplace` | `claude plugin install` only accepts `<name>@<marketplace>`, not a directory path. Run `claude plugin marketplace add ./fe-toolkit-demo` first, then `claude plugin install fe-toolkit@tubi-fe`. |
+| `claude plugin install ./fe-toolkit-skills` errors with `Plugin "./fe-toolkit-skills" not found in any configured marketplace` | `claude plugin install` only accepts `<name>@<marketplace>`, not a directory path. Run `claude plugin marketplace add ./fe-toolkit-skills` first, then `claude plugin install fe-toolkit@tubi-fe`. |
 | `marketplace add` fails because `tubi-fe` already exists | You previously added the GitHub copy. Run `claude plugin marketplace remove tubi-fe` and re-add either source. |
 | `fe-toolkit` shows `failed to load` with `Dependency "figma@tubi-fe" is not installed` | The plugin's manifest must spell the dependency's marketplace correctly (`{ "name": "figma", "marketplace": "claude-plugins-official" }`) AND the `tubi-fe` marketplace must opt in to cross-marketplace dependencies via `"allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"]`. Both are already in this repo; if you see the error, you're on an old install. Fix with: `claude plugin marketplace update tubi-fe && claude plugin update fe-toolkit@tubi-fe`. As a one-time fallback, you can install Figma manually first: `claude plugin install figma@claude-plugins-official`. |
 
