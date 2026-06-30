@@ -94,7 +94,7 @@ Each MCP server's OAuth token is shared across all of Claude Code (it lives in y
 - If you have used Atlassian Cloud from another Claude Code plugin before, that token is already cached and Atlassian shows `✓ Connected` from day one - no browser needed.
 - The Figma MCP is newer, so most users hit `! Needs authentication` the first time. Subagents are not guaranteed to bubble the OAuth flow up to a browser tab in your terminal session, so the call can fail silently with a "permissions issue" error instead of opening the browser. Running `/fe-toolkit:auth` from the top-level agent avoids that path entirely.
 
-A `SessionStart` hook detects this state on every Claude Code launch and prints a one-line reminder if any MCP server tied to this plugin is still `Needs authentication`. The reminder points you straight at `/fe-toolkit:auth`.
+A `SessionStart` hook detects this state on every Claude Code launch and prints a one-line reminder if any MCP server tied to this plugin is still `Needs authentication`, or if the `databricks` CLI is installed but has no tubi-dev workspace profile. The reminder points you straight at `/fe-toolkit:auth` (or `databricks auth login`).
 
 ### Manual fallback
 
@@ -127,7 +127,7 @@ flowchart LR
 
 ### `/fe-toolkit:auth`
 
-One-shot OAuth into every MCP server this plugin needs (Atlassian + Figma). Idempotent - if a server is already authenticated it is left alone. Run once after install, and any time `claude mcp list` shows a `Needs authentication` row for a plugin-provided server.
+One-shot auth check for everything fe-toolkit needs: OAuth into every MCP server (Atlassian + Figma) and verification that the `databricks` CLI is logged in to the **tubi-dev** workspace (`https://tubi-dev.cloud.databricks.com`), which `/fe-toolkit:web-vitals-experiment` relies on. Idempotent - anything already authenticated is left alone. Each target is verified with a real call. Run once after install, and any time `claude mcp list` shows a `Needs authentication` row or the Databricks CLI loses its tubi-dev profile. A databricks-only failure does not block the Jira/Figma workflow; fix it with `databricks auth login --host https://tubi-dev.cloud.databricks.com`.
 
 ### `/fe-toolkit:plan-ticket <TICKET-ID>`
 

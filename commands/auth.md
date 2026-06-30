@@ -1,15 +1,16 @@
 ---
-description: One-shot OAuth into every MCP server this plugin requires (Atlassian + Figma). Run this once after install.
+description: One-shot auth check for everything fe-toolkit needs - OAuth into the MCP servers (Atlassian + Figma) and verify the Databricks CLI for the tubi-dev workspace. Run this once after install.
 ---
 
-Authenticate every MCP server that fe-toolkit needs in one shot. OAuth flows open in your browser; tokens are then cached in the system keychain and shared across sessions.
+Authenticate every backend that fe-toolkit needs in one shot, and verify each one with a real call. MCP OAuth flows open in your browser and cache tokens in the system keychain; the Databricks CLI uses its own login and `~/.databrickscfg`.
 
-## Servers covered
+## What gets verified
 
-| Logical name | Tool prefix | Provided by | Endpoint |
+| Logical name | Tool prefix / binary | Provided by | Endpoint |
 |---|---|---|---|
 | `plugin:fe-toolkit:atlassian` | `mcp__plugin_fe-toolkit_atlassian__*` | this plugin's `.mcp.json` | `https://mcp.atlassian.com/v1/mcp/authv2` |
 | `plugin:figma:figma` | `mcp__plugin_figma_figma__*` | the `figma@claude-plugins-official` dependency | `https://mcp.figma.com/mcp` |
+| `databricks` (CLI) | `databricks` binary | the Databricks CLI (used by `/fe-toolkit:web-vitals-experiment`) | `https://tubi-dev.cloud.databricks.com` |
 
 ## Procedure
 
@@ -30,19 +31,44 @@ For **each** of `plugin:fe-toolkit:atlassian` and `plugin:figma:figma`, in order
 
 3. After the authenticate tool returns, re-run the trivial read-only call from step 1 to confirm the token works. If it still fails, surface the verbatim error and stop — do not loop.
 
+## Databricks CLI (workspace data access)
+
+The `/fe-toolkit:web-vitals-experiment` command reads Web Vitals data through the `databricks` CLI, which authenticates separately from the MCP servers and must point at the **tubi-dev** workspace (`https://tubi-dev.cloud.databricks.com`). Verify it like this:
+
+1. Confirm the CLI is installed: run `command -v databricks`. If it is missing, mark databricks as `✘ CLI not installed` and tell the user:
+
+   > Install the Databricks CLI (`brew install databricks`, or see the Databricks docs), then run `databricks auth login --host https://tubi-dev.cloud.databricks.com`.
+
+   Stop the databricks check here.
+
+2. List profiles and look for the tubi-dev workspace: run `databricks auth profiles`. It prints `Name  Host  Valid`. Find the row whose **Host** is `https://tubi-dev.cloud.databricks.com` (match on the host, not the profile name — the name is user-chosen). Note that profile's name as `<profile>`.
+
+   - **No row for that host** → databricks is `✘ no tubi-dev profile`. Tell the user:
+
+     > Run `databricks auth login --host https://tubi-dev.cloud.databricks.com`. A browser tab opens for OAuth; accept the default profile name or pick one.
+
+   - **Row exists but `Valid` is `NO`** (expired/revoked) → databricks is `✘ token expired`. Tell the user to re-run the same `databricks auth login --host https://tubi-dev.cloud.databricks.com`.
+
+   - **Row exists and `Valid` is `YES`** → continue to step 3.
+
+3. Confirm with a real call (mirrors the MCP post-auth verification): run `databricks current-user me -p <profile>`. If it returns the user, mark databricks as `✓ tubi-dev as <user>`. If it errors, surface the verbatim error and point the user at `databricks auth login --host https://tubi-dev.cloud.databricks.com`.
+
+Do not read, paste, or modify any Databricks token or `~/.databrickscfg` contents yourself — the only legitimate path is `databricks auth login`.
+
 ## Output
 
 When all servers are confirmed authenticated, reply with a short status block. Use this exact format so downstream commands can parse it if needed:
 
 ```
 fe-toolkit auth status
-- atlassian: ✓ authenticated as <user/account if known>
-- figma:     ✓ authenticated as <user/account if known>
+- atlassian:  ✓ authenticated as <user/account if known>
+- figma:      ✓ authenticated as <user/account if known>
+- databricks: ✓ tubi-dev as <user>
 
-Ready. You can now run /fe-toolkit:plan-ticket <TICKET-ID>.
+Ready. You can now run /fe-toolkit:plan-ticket <TICKET-ID> or /fe-toolkit:web-vitals-experiment.
 ```
 
-If only one server authed successfully, still emit the block with the failed one marked `✘ <error>`, and tell the user the concrete next step (e.g. "Re-open `/mcp` interactively and click Authenticate on the figma row" or "Check `claude mcp list` to confirm the server is registered").
+If any target failed, still emit the block with the failed one marked `✘ <error>`, and tell the user the concrete next step (e.g. "Re-open `/mcp` interactively and click Authenticate on the figma row", "Check `claude mcp list` to confirm the server is registered", or "Run `databricks auth login --host https://tubi-dev.cloud.databricks.com`"). The databricks target is only required for `/fe-toolkit:web-vitals-experiment`, so a databricks-only failure does not block the Jira/Figma workflow.
 
 ## Hard rules
 
