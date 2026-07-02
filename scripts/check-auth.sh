@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # check-auth.sh - SessionStart hook for the fe-toolkit plugin.
-# Inspects `claude mcp list` for MCP servers provided by this plugin (and its
-# Figma dependency) that are in the "Needs authentication" state, and prints
-# a single-line reminder telling the user how to fix it.
+# Inspects `claude mcp list` for MCP servers provided by this plugin (its own
+# `.mcp.json` servers - atlassian, statsig - and its Figma dependency) that
+# are in the "Needs authentication" state, and prints a single-line reminder
+# telling the user how to fix it.
 #
 # Silent (no output) when everything is already authenticated.
 # Silent (no output) when the `claude` CLI is missing or returns non-zero.

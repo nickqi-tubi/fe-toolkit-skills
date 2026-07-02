@@ -10,7 +10,7 @@
     {
       "name": "fe-toolkit",
       "source": "./",
-      "description": "Frontend dev workflow: Jira ticket -> Figma design -> plan mode -> implement -> conventional commit, plus Web Vitals optimization experiments from Databricks field data.",
+      "description": "Frontend dev workflow: Jira ticket -> Figma design -> plan mode -> implement -> conventional commit, plus Web Vitals optimization experiments from Databricks field data and Statsig.",
       "category": "development",
       "tags": [
         "frontend",
@@ -20,7 +20,9 @@
         "conventional-commits",
         "web-vitals",
         "performance",
-        "databricks"
+        "databricks",
+        "statsig",
+        "experimentation"
       ]
     }
   ]
