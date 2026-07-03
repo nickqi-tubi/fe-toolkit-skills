@@ -20,17 +20,19 @@ These thresholds are duplicated in `query_web_vitals.sh` (the `good_thr` / `poor
 
 ## Prioritization model
 
-For each `(device_type, metric_type, dimension_key)` over the look-back window (default 28 days, matching the GSC rolling window):
+For each `(device_type, metric_type, dimension_key)` over the look-back window (default 28 days — chosen as 4 weekly-release cycles and a multiple of 7 to cancel day-of-week seasonality, while giving lower-traffic routes enough samples for a stable weighted P75; it is **not** tied to any GSC window, since the data is our own telemetry, not a GSC export):
 
 ```
 w_p75        = SUM(p75 * sample_count) / SUM(sample_count)   -- weighted-mean approximation of period P75
 total_samples = SUM(sample_count)
 score        = MAX((w_p75 - good_thr) / good_thr, 0) * total_samples
+confidence   = 'low' if total_samples < min_samples else 'ok'  -- min_samples default 100000
 ```
 
 - `w_p75` is an approximation: a true period P75 cannot be recomputed from per-day P75s. It is good enough for ranking and for a rough before-number; the real verdict comes from the experiment's own P75.
 - Dividing the gap by `good_thr` makes the score comparable across metrics that have different units.
-- Multiplying by traffic favors routes that shift a GSC group fastest.
+- Multiplying by traffic favors routes whose worst band moves fastest.
+- `confidence = low` marks cohorts with too few window samples for a stable weighted P75; treat their ranking with caution (see SKILL.md GATE 1).
 - Ranking is per device. Mobile is usually the SEO-critical bucket; still rank desktop separately.
 
 ## SQL cookbook
@@ -58,7 +60,8 @@ SELECT device_type, metric_type, dimension_key, ROUND(w_p75, 3) AS w_p75,
        total_samples, days_present,
        CASE WHEN w_p75 <= good_thr THEN 'good'
             WHEN w_p75 <= poor_thr THEN 'needs-improvement' ELSE 'poor' END AS status,
-       ROUND(GREATEST((w_p75 - good_thr)/good_thr, 0) * total_samples, 1) AS score
+       ROUND(GREATEST((w_p75 - good_thr)/good_thr, 0) * total_samples, 1) AS score,
+       CASE WHEN total_samples < :min_samples THEN 'low' ELSE 'ok' END AS confidence
 FROM agg /* + good_thr/poor_thr CASE per metric */
 ORDER BY score DESC, total_samples DESC;
 ```
@@ -156,7 +159,7 @@ State which split the proposal uses and why.
 ## Notes
 
 - LCP attribution sub-parts (`lcpTimeToFirstByte`, `lcpResourceLoadDelay`, `lcpResourceLoadDuration`, `lcpElementRenderDelay`, element tag/id/class) are emitted to raw client logs by `reportWebVitals.ts` but are **not** in `perf_web_vitals_daily`. If a hypothesis needs them, note that a raw-client-log query is required — out of scope for this skill's daily-table queries.
-- The reported cohort is cold first navigation only, so the table already excludes reloads, bfcache, and SPA transitions — it matches the GSC first-impression population.
+- The reported cohort is cold first navigation only, so the table already excludes reloads, bfcache, and SPA transitions — this first-impression / SEO-entry population closely resembles (but is not sourced from) what GSC later reports on.
 
 ## Modern Web Guidance integration
 

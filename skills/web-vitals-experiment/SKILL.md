@@ -1,6 +1,16 @@
 ---
 name: web-vitals-experiment
 description: Analyze P75 Web Vitals field data from Databricks (core_dev.dsa.perf_web_vitals_daily) and propose a per-device (mobile vs desktop) optimization experiment for the adRise/www web app. Use when the user wants to improve Core Web Vitals / Google Search Console performance, asks about LCP, INP, CLS, FCP, or TTFB by route, mentions perf_web_vitals_daily or webVitals route IDs, or runs /fe-toolkit:web-vitals-experiment.
+allowed-tools:
+  - Bash(bash *query_web_vitals.sh*)
+  - Bash(npx browserslist:*)
+  - Bash(npx -y browserslist:*)
+  - Bash(npx modern-web-guidance@latest:*)
+  - Bash(npx -y modern-web-guidance@latest:*)
+  - Bash(git rev-parse:*)
+  - Bash(command -v databricks)
+  - Bash(databricks auth profiles:*)
+  - Bash(databricks warehouses list:*)
 ---
 
 # Web Vitals Optimization Experiment skill
@@ -8,6 +18,8 @@ description: Analyze P75 Web Vitals field data from Databricks (core_dev.dsa.per
 You turn Web Vitals **field data** into a concrete, review-ready **optimization experiment proposal** for the Tubi web app (`adRise/www`). You optimize for **P75**, because the Google Search Console (GSC) Core Web Vitals report classifies URL groups by field-data P75. You design **mobile and desktop as separate experiments** — they share a metric but their bottlenecks and implementations differ.
 
 This skill **proposes**; it does not change `www` behavior, create Statsig experiments, or open PRs. The only files you write are the per-device proposal docs. You pause at three approval gates and never skip past one without an explicit user choice.
+
+The read-only data commands this skill runs — the bundled `query_web_vitals.sh`, `npx browserslist`, `npx modern-web-guidance@latest`, and the `git`/`databricks` pre-flight checks — are pre-approved via this skill's `allowed-tools` frontmatter, so they run without a per-command permission prompt. That only removes the tool-approval popups; it does **not** remove the GATE stops, which are conversational pauses where you must wait for the developer's explicit choice.
 
 ## Operating constraints
 
@@ -31,7 +43,7 @@ Table `core_dev.dsa.perf_web_vitals_daily`, one row per day per cohort:
 | `p50/p75/p90/p99` | daily percentiles (ms; unitless ratio for CLS) |
 | `sample_count` | first-cold-navigate samples that day |
 
-Data provenance: `src/web/utils/reportWebVitals.ts` only reports on cold first navigation (`navigationType === 'navigate'`), which is exactly the SEO/GSC first-impression cohort. So this table is the right proxy for what GSC sees.
+Data provenance: this table is **our own online telemetry**, not a GSC export. `src/web/utils/reportWebVitals.ts` reports each cold first navigation (`navigationType === 'navigate'`) via `trackLogging` client logs, which land in this daily table. It reports on every qualifying navigation (no client-side sampling), so the table is the real field-data distribution for the first-impression / SEO-entry cohort. Google Search Console is only an **outcome reference** we compare against later — it is not the data source, and nothing here needs to match GSC's own reporting window.
 
 ## Workflow
 
@@ -85,11 +97,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/web-vitals-experiment/scripts/query_web_vital
   --mode rank --days 28
 ```
 
-Add `--metric`, `--device`, or `--route` to narrow when the user gave a hint. The script returns TSV: `device_type, metric_type, dimension_key, w_p75, total_samples, days_present, status, score`.
+Add `--metric`, `--device`, or `--route` to narrow when the user gave a hint. The script returns TSV: `device_type, metric_type, dimension_key, w_p75, total_samples, days_present, status, score, confidence`.
 
 - `w_p75` is a **sample-weighted mean of daily P75** over the window — a documented approximation of the period P75 (a true period P75 is not recoverable from daily P75s). State this caveat when you present numbers.
 - `status` is `good` / `needs-improvement` / `poor` vs Google's thresholds.
-- `score` ranks ROI: `max((w_p75 - good_threshold)/good_threshold, 0) * total_samples`. The relative gap makes the score comparable across metrics with different units; multiplying by traffic favors the routes that move a GSC group the fastest.
+- `score` ranks ROI: `max((w_p75 - good_threshold)/good_threshold, 0) * total_samples`. The relative gap makes the score comparable across metrics with different units; multiplying by traffic favors the routes that move the worst band fastest.
+- `confidence` is `ok` / `low`: `low` means `total_samples` over the window is under `--min-samples` (default 100k), so the weighted P75 is too noisy to trust for ranking. Default the window to 28 days (4 weekly-release cycles, multiple of 7 to cancel day-of-week seasonality); shorten with `--days` only for a deliberate recency check, and prefer `--mode trend` around a release date to attribute a regression — do not shorten the rank window to chase code freshness.
 
 Present **two ranked tables, mobile and desktop separately**, each filtered to the GSC-ranked metrics (LCP/INP/CLS) at the top, with FCP/TTFB shown below as diagnostics. Translate every `dimension_key` to its route name via the Step 0 map. Drop empty / `OTH` rows from the headline ranking (mention them once as caveats). Flag any `dimension_key` that is not in the map as "unmapped — verify webVitalsRoutes.ts".
 
@@ -102,11 +115,11 @@ Below the two ranked tables, output a short **candidate shortlist** — the top 
 ```
 Recommended targets (pick one, or name your own route x metric x device):
 
-1. [RECOMMENDED] movieDetail (MD) · LCP · mobile — w_p75 4.8s (poor), 1.2M samples/28d.
-   Highest score: worst GSC band on the highest-traffic SEO route; moving it flips a whole GSC group.
-2. home (H) · LCP · mobile — w_p75 3.1s (needs-improvement), 3.4M samples/28d.
+1. [RECOMMENDED] movieDetail (MD) · LCP · mobile — w_p75 4.8s (poor), 1.2M samples/28d, confidence ok.
+   Highest score: worst band on the highest-traffic SEO route; the biggest field-data win.
+2. home (H) · LCP · mobile — w_p75 3.1s (needs-improvement), 3.4M samples/28d, confidence ok.
    Most traffic overall; smaller gap but a small win touches the most users.
-3. tvShowDetail (TS) · CLS · desktop — w_p75 0.28 (poor), 240k samples/28d.
+3. tvShowDetail (TS) · CLS · desktop — w_p75 0.28 (poor), 240k samples/28d, confidence ok.
    Only poor CLS route; layout-shift fixes are usually low-risk.
 
 Which target should the experiment optimize? (reply with a number, or your own route/metric/device)
@@ -118,6 +131,7 @@ Rules for this gate:
 - **If the user pinned only some dimensions** (e.g. just a route, or just a metric), filter the shortlist to what they pinned and still stop for them to choose among the remaining candidates. Do not fill in the missing dimensions yourself.
 - **If the user passed no args**, always present the shortlist above and stop. Do not pick for them even when there is an obvious top score — label your top pick `[RECOMMENDED]` and explain why, but wait for their reply.
 - Prefer `poor` status and high `total_samples` when ordering the shortlist and choosing which one to mark `[RECOMMENDED]`.
+- Treat `confidence = low` rows with caution: keep them out of the `[RECOMMENDED]` slot unless the developer explicitly wants that route, and label them "low sample volume — verdict will be slow/noisy" in the rationale.
 - Do not proceed to Step 2 until the developer has explicitly named a target. If they want both devices for one route+metric, produce two proposals.
 
 ### Step 2 - Discover code paths

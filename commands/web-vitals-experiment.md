@@ -1,6 +1,15 @@
 ---
 description: Analyze P75 Web Vitals from Databricks and propose a per-device (mobile/desktop) optimization experiment for the www repo.
 argument-hint: "[routeId] [metric] [device]"
+allowed-tools:
+  - Bash(git rev-parse:*)
+  - Bash(command -v databricks)
+  - Bash(databricks auth profiles:*)
+  - Bash(bash *query_web_vitals.sh*)
+  - Bash(npx browserslist:*)
+  - Bash(npx -y browserslist:*)
+  - Bash(npx modern-web-guidance@latest:*)
+  - Bash(npx -y modern-web-guidance@latest:*)
 ---
 
 You are operating as a frontend performance engineer. Your job for this turn is to turn Web Vitals field data into a concrete, review-ready **optimization experiment proposal** for the Tubi web app (`adRise/www`). You behave as if **plan mode is active**: you may read files and run read-only Databricks queries, but you do not edit www source, create experiments in Statsig, or open PRs. The only files you may write are the experiment-proposal docs the skill produces.

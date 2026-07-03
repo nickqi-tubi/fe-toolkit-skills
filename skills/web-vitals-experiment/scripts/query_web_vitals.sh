@@ -12,8 +12,8 @@
 # Usage:
 #   query_web_vitals.sh [--mode rank|trend] [--metric LCP|INP|CLS|FCP|TTFB]
 #                       [--device mobile|desktop] [--route <ROUTE_ID>]
-#                       [--days N] [--warehouse <id>] [--profile <name>]
-#                       [--format tsv|json]
+#                       [--days N] [--min-samples N] [--warehouse <id>]
+#                       [--profile <name>] [--format tsv|json]
 #
 #   --mode    rank  (default) ranked targets over the window.
 #             trend daily P75 + sample_count series (needs --metric, --device,
@@ -21,7 +21,11 @@
 #   --metric  filter to one metric_type (rank mode: optional; trend: required).
 #   --device  filter to mobile|desktop (trend: required).
 #   --route   filter to one ROUTE_ID / dimension_key (trend: required).
-#   --days    look-back window in days (default 28, matching the GSC window).
+#   --days    look-back window in days (default 28 = 4 weekly-release cycles
+#             and a multiple of 7 to cancel day-of-week seasonality; the data
+#             is our own telemetry, so this is not tied to any GSC window).
+#   --min-samples  rank mode: cumulative cold-navigate samples over the window
+#             below which a cohort is flagged confidence=low (default 100000).
 #   --warehouse  SQL warehouse id; default = first RUNNING warehouse.
 #   --profile Databricks CLI profile whose host is
 #             https://tubi-dev.cloud.databricks.com. Default: auto-resolved by
@@ -39,6 +43,9 @@
 #     actionable, separately-implemented cohorts.
 #   - rank score = max((w_p75 - good_threshold)/good_threshold, 0) * total_samples
 #     so it is comparable across metrics with different units.
+#   - rank mode adds a `confidence` column (ok|low): low means total_samples over
+#     the window is under --min-samples, so the weighted P75 is too noisy to
+#     trust for ranking. Down-weight low-confidence rows when picking a target.
 
 set -euo pipefail
 
@@ -52,6 +59,10 @@ days="28"
 warehouse=""
 profile=""
 format="tsv"
+# Cumulative cold-navigate samples (over the window) below which a ranked
+# cohort's weighted P75 is too noisy to trust; such rows are flagged
+# confidence=low so the shortlist step can down-weight them.
+min_samples="100000"
 
 TUBI_DEV_HOST="https://tubi-dev.cloud.databricks.com"
 
@@ -64,10 +75,11 @@ while [[ $# -gt 0 ]]; do
     --device)    device="${2:-}"; shift 2 ;;
     --route)     route="${2:-}"; shift 2 ;;
     --days)      days="${2:-}"; shift 2 ;;
+    --min-samples) min_samples="${2:-}"; shift 2 ;;
     --warehouse) warehouse="${2:-}"; shift 2 ;;
     --profile)   profile="${2:-}"; shift 2 ;;
     --format)    format="${2:-}"; shift 2 ;;
-    -h|--help)   sed -n '2,40p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,48p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" 2 ;;
   esac
 done
@@ -75,6 +87,7 @@ done
 case "$mode" in rank|trend) ;; *) die "invalid --mode '$mode'" 2 ;; esac
 case "$format" in tsv|json) ;; *) die "invalid --format '$format'" 2 ;; esac
 [[ "$days" =~ ^[0-9]+$ ]] || die "--days must be a positive integer" 2
+[[ "$min_samples" =~ ^[0-9]+$ ]] || die "--min-samples must be a non-negative integer" 2
 
 command -v databricks >/dev/null 2>&1 || die "databricks CLI not found; install it and run 'databricks auth login --host ${TUBI_DEV_HOST}'" 3
 command -v python3 >/dev/null 2>&1 || die "python3 not found (needed to build/parse the request)" 3
@@ -181,7 +194,8 @@ SELECT device_type, metric_type, dimension_key,
        CASE WHEN w_p75 <= good_thr THEN 'good'
             WHEN w_p75 <= poor_thr THEN 'needs-improvement'
             ELSE 'poor' END AS status,
-       ROUND(GREATEST((w_p75 - good_thr) / good_thr, 0) * total_samples, 1) AS score
+       ROUND(GREATEST((w_p75 - good_thr) / good_thr, 0) * total_samples, 1) AS score,
+       CASE WHEN total_samples < ${min_samples} THEN 'low' ELSE 'ok' END AS confidence
 FROM scored
 ORDER BY score DESC, total_samples DESC
 LIMIT 200"
