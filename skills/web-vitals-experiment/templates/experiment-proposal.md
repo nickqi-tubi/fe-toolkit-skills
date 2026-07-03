@@ -30,6 +30,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/skills/web-vitals-experiment/scripts/query_web_vital
 - `<path:line>` — <what it does / why it matters for this metric on this device>
 - `<path:line>` — <...>
 
+**Evidence (Modern Web Guidance):**
+
+- `<guide-id>` — <relevant recommendation from retrieved guide; omit section if MWG was skipped>
+
 ## Experiment design
 
 ### Variants
@@ -44,6 +48,19 @@ One optimization per group. If more optimizations are planned for this route, ea
 ### Device split
 
 <Separate `*_<device>` experiment, or one device-scoped experiment — and why. See reference.md "Mobile vs desktop".>
+
+### Browser compatibility & fallback
+
+- **Browserslist target:** `<raw query from package.json or .browserslistrc>`
+- **Resolved matrix:** `<output of npx browserslist>`
+- **MWG guide(s):** `<guide-id>` (or "MWG consultation skipped — network unavailable")
+- **Features & compat:**
+
+| feature | MWG guide | in browserslist? | fallback (if out-of-target) |
+|---------|-----------|------------------|-------------------------------|
+| `<e.g. fetchpriority="high">` | `<guide-id>` | yes / no | `<feature detection + graceful degradation, or "none needed">` |
+
+Any out-of-target feature without an acceptable fallback must not ship in this experiment.
 
 ### experimentV2 config
 

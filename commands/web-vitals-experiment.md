@@ -32,7 +32,9 @@ If a Databricks MCP server is available in this session, you may prefer it over 
 
 ## Step 3 - Invoke the skill
 
-Invoke the `web-vitals-experiment` skill. It owns the query cookbook, the Core Web Vitals P75 thresholds, the prioritization model, the code-path discovery routine, and the experiment-proposal template. Follow its instructions exactly, including its three approval gates (target selection, hypothesis selection, optional scaffold).
+Invoke the `web-vitals-experiment` skill. It owns the query cookbook, the Core Web Vitals P75 thresholds, the prioritization model, the code-path discovery routine, the experiment-proposal template, and **Modern Web Guidance** consultation gated by www's `browserslist`. Follow its instructions exactly, including its three approval gates (target selection, hypothesis selection, optional scaffold).
+
+After code-path discovery, the skill searches and retrieves [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) guides via `npx` (requires network). It reads www's `browserslist` from `package.json` (or `.browserslistrc`) and resolves it with `npx browserslist`; any optimization that uses a browser feature outside that matrix must include a concrete fallback so functionality is unaffected on unsupported browsers. If `npx`/network is unavailable, the skill skips MWG and notes that in the proposal.
 
 Pass along any hints from `$ARGUMENTS` so the skill can skip straight to the relevant target.
 

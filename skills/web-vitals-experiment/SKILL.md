@@ -12,9 +12,10 @@ This skill **proposes**; it does not change `www` behavior, create Statsig exper
 ## Operating constraints
 
 - Read-only on `www` source. The single allowed write is the proposal doc(s) under `doc/web-vitals/` in the www repo (www's existing docs convention is the singular `doc/`, not `docs/`).
-- Web platform only (`platform = 'web'`). The table has no other platform.
+- **Web platform only.** All data queries filter `platform = 'web'`; all code-path discovery and optimizations target the browser web app (`adRise/www`). Do not propose TV, mobile-native, or other platform changes.
 - Headline target is one of the three **GSC-ranked** Core Web Vitals: **LCP, INP, CLS**. Treat **FCP** and **TTFB** as diagnostics / guardrails only — never as the headline metric.
 - Always keep mobile and desktop separate. If the user did not pin a device, produce one proposal per device for the chosen route+metric.
+- **Browserslist gate.** Read www's `browserslist` (from `package.json`, or `.browserslistrc` if absent) and resolve it at Step 0. Every Modern Web Guidance (MWG) recommendation must be checked against that matrix; any feature outside the resolved browserslist **must** ship a concrete fallback so functionality is unaffected, or the hypothesis is dropped/redesigned. Do not write the policy into www's AGENTS.md/CLAUDE.md — pass it inline per run.
 
 ## Data model (memorize)
 
@@ -37,22 +38,42 @@ Data provenance: `src/web/utils/reportWebVitals.ts` only reports on cold first n
 Copy this checklist and track progress:
 
 ```
-- [ ] Step 0: Build the ROUTE_ID -> route map from www
+- [ ] Step 0: Build ROUTE_ID -> route map + resolve www browserslist policy
 - [ ] Step 1: Query + rank targets (mobile & desktop separately)
 - [ ] GATE 1: present candidate shortlist + recommendation, STOP; developer picks route x metric (x device)
-- [ ] Step 2: Discover code paths in www for the route
-- [ ] Step 3: Rank optimization hypotheses
+- [ ] Step 2: Discover code paths in www for the route (web platform only)
+- [ ] Step 2.5: Consult Modern Web Guidance (browserslist-gated)
+- [ ] Step 3: Rank optimization hypotheses (cite MWG guide ids + fallback per feature)
 - [ ] GATE 2: user picks a hypothesis
 - [ ] Step 4: Render per-device experiment proposal doc(s)
 - [ ] GATE 3 (optional): scaffold experimentV2 config + selector stubs
 ```
 
-### Step 0 - Build the ROUTE_ID -> route map
+### Step 0 - Build the ROUTE_ID -> route map and browserslist policy
 
 Read `src/common/utils/webVitalsRoutes.ts` in the www repo. The `ROUTE_IDS` object maps each `WEB_ROUTES.*` template to a short ID (`H`, `M`, `MD`, `TS1`, ...). Invert it so you can translate every `dimension_key` the data returns into a human route name + path template. Keep the map in memory for the rest of the run.
 
 - `''` (empty) → "all routes (rollup)" — exclude from a route-specific proposal.
 - `OTH` → "other / unmapped routes" — exclude from a route-specific proposal (it is not a single page).
+
+Also read www's browser-support target and keep it in memory as the **MWG custom policy** for the rest of the run:
+
+1. Read `browserslist` from `package.json` (or `.browserslistrc` if `package.json` has no `browserslist` key).
+2. Resolve the concrete matrix from the www checkout:
+
+```bash
+npx browserslist
+```
+
+3. Formulate the policy string you will pass to MWG, e.g.:
+
+```
+Browser support policy: must satisfy www browserslist — <paste resolved browserslist output>.
+Any feature not covered by this matrix requires a concrete fallback (feature detection +
+graceful degradation) so functionality is unaffected; drop the hypothesis if no acceptable fallback exists.
+```
+
+Keep both the raw `browserslist` query and the resolved output for citation in the proposal doc.
 
 ### Step 1 - Query and rank
 
@@ -110,11 +131,38 @@ For the chosen route, scout `www` read-only and time-boxed (a handful of tool ca
    - **CLS**: images/embeds without reserved dimensions, late-injected banners, font swap.
 4. Note mobile vs desktop differences you actually see in code (responsive components, image sizes, mobile-only modules).
 
-Cite concrete `path:line` references. Do not read the whole codebase.
+Cite concrete `path:line` references. Do not read the whole codebase. Scope discovery to the **web** app only — no TV or native code paths.
+
+### Step 2.5 - Consult Modern Web Guidance (browserslist-gated)
+
+After Step 2, search [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) for best practices that match the chosen metric and the symptoms you found in code. Requires network access via `npx`. For CLI details and metric-to-guide mapping, see [reference.md](reference.md) "Modern Web Guidance integration".
+
+Build an action-oriented search query from the metric + code findings (e.g. `LCP hero image fetchpriority`, `INP long tasks hydration`, `CLS image dimensions font swap`).
+
+```bash
+npx -y modern-web-guidance@latest search "<metric> <symptom from Step 2>"
+```
+
+Review the JSON results (guide `id`, `description`, `featuresUsed`, `similarity`). Retrieve the top 1-3 relevant guides:
+
+```bash
+npx -y modern-web-guidance@latest retrieve "<id>"
+```
+
+When evaluating each retrieved guide:
+
+1. **Apply the Step 0 browserslist policy** as MWG's custom browser-support policy. Each guide includes Baseline/browser-compat data — compare every recommended API or CSS feature against the resolved `npx browserslist` output.
+2. **In-target features** (covered by browserslist): note "in-target, no fallback needed".
+3. **Out-of-target features**: the hypothesis must specify a concrete fallback (feature detection + graceful degradation) so functionality is unaffected on unsupported browsers. If no acceptable fallback exists, do not propose that optimization — pick a different guide or redesign the approach.
+4. Keep the retrieved guide `id`(s) and compat notes for Step 3 and the proposal doc.
+
+**Network/offline fallback:** if `npx` or network is unavailable (command hangs, offline, or package fetch fails), skip this step. Rely on Step 2 code-discovery findings alone for hypotheses, and note in the proposal: "MWG consultation skipped (network unavailable)."
 
 ### Step 3 - Rank optimization hypotheses
 
-Produce 2-4 hypotheses for the chosen target, each as a row with: description, expected impact on the target P75, confidence, complexity, implementation risk, validation strategy, rollback. One hypothesis = one optimization = one experiment group (per the team workflow: one change at a time). Keep mobile and desktop hypotheses distinct where the fix differs.
+Produce 2-4 hypotheses for the chosen target, each as a row with: description, expected impact on the target P75, confidence, complexity, implementation risk, **MWG guide id(s)**, **browser compat** (in-target or fallback per feature), validation strategy, rollback. One hypothesis = one optimization = one experiment group (per the team workflow: one change at a time). Keep mobile and desktop hypotheses distinct where the fix differs.
+
+Ground each hypothesis in both Step 2 `path:line` citations and Step 2.5 MWG guide(s). When MWG was skipped, omit the guide-id column and state compat assessment from code knowledge only.
 
 ### GATE 2 - Pick a hypothesis
 
@@ -137,7 +185,8 @@ doc/web-vitals/<route-id>-<metric>-<device>-<hypothesis-slug>.md
 Each proposal must include:
 
 - Target: route (name + path), metric, device, current `w_p75` + status, target P75 (the next better GSC band, e.g. poor → needs-improvement, or into `good`), and the P75 caveat.
-- Hypothesis & rationale, grounded in the Step 2 code citations.
+- Hypothesis & rationale, grounded in Step 2 code citations and Step 2.5 MWG guide id(s) (when available).
+- Browser compatibility & fallback: resolved browserslist target, MWG guide id(s), each feature introduced, compat status vs browserslist, and the fallback for any out-of-target feature (see template).
 - Proposed `ExperimentDescriptor`: a `webott_web_*` snake_case `name`, the parameter(s) and their union types, and `defaultParams` set to control. Plus the selector file path under `src/common/selectors/experiments/`.
 - Variant structure: `control` + one variant per optimization, scoped to one experiment group.
 - Primary success metric: P75 of the target metric for that exact route+device cold-navigate cohort, read from this table; include the `query_web_vitals.sh --mode trend` command to baseline it.
@@ -161,3 +210,6 @@ Only if the user explicitly asks, scaffold the **inert** experimentV2 wiring (no
 - NEVER auto-start a stopped SQL warehouse; if none is running, tell the user.
 - ALWAYS state the weighted-P75 approximation caveat when quoting window numbers.
 - ALWAYS map every `dimension_key` through `webVitalsRoutes.ts`; flag unmapped keys instead of guessing.
+- ALWAYS scope optimizations to the **web** platform (`platform = 'web'` in data; web app code paths in www only).
+- ALWAYS gate MWG feature recommendations on www's resolved browserslist; any out-of-target feature MUST ship a concrete fallback or the hypothesis is dropped/redesigned.
+- ALWAYS consult MWG at Step 2.5 when network is available; note in the proposal when it was skipped.

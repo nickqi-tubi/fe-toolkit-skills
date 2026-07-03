@@ -157,3 +157,44 @@ State which split the proposal uses and why.
 
 - LCP attribution sub-parts (`lcpTimeToFirstByte`, `lcpResourceLoadDelay`, `lcpResourceLoadDuration`, `lcpElementRenderDelay`, element tag/id/class) are emitted to raw client logs by `reportWebVitals.ts` but are **not** in `perf_web_vitals_daily`. If a hypothesis needs them, note that a raw-client-log query is required — out of scope for this skill's daily-table queries.
 - The reported cohort is cold first navigation only, so the table already excludes reloads, bfcache, and SPA transitions — it matches the GSC first-impression population.
+
+## Modern Web Guidance integration
+
+The skill consults [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) (MWG) at Step 2.5 to ground hypotheses in current browser best practices. MWG is invoked via CLI (not a separate skill load):
+
+```bash
+npx -y modern-web-guidance@latest search "<metric> <symptom from code discovery>"
+npx -y modern-web-guidance@latest retrieve "<id>"
+```
+
+If search results are vague or low-similarity, browse all guides:
+
+```bash
+npx -y modern-web-guidance@latest list
+```
+
+### Browserslist → custom policy
+
+At Step 0, read www's `browserslist` and resolve it:
+
+```bash
+npx browserslist
+```
+
+Pass the resolved matrix to MWG as the custom browser-support policy (natural language in the agent's evaluation step). MWG guides include Baseline/browser-compat data; compare each recommended feature against the resolved output.
+
+**Fallback rule:** if a guide recommends a feature **not** covered by the resolved browserslist, the hypothesis must specify a concrete fallback (feature detection + graceful degradation) so functionality is unaffected. If no acceptable fallback exists, drop or redesign the hypothesis. Do not write the policy into www's AGENTS.md/CLAUDE.md.
+
+### Metric → starting guides
+
+Use search first; these ids are common starting points when symptoms match:
+
+| metric | MWG guide ids (performance) |
+|--------|-------------------------------|
+| LCP | `optimize-image-priority`, `optimize-preload-priority`, `optimize-script-priority`, `defer-rendering-heavy-content` |
+| INP | `identify-inp-causes`, `break-up-long-tasks`, `schedule-tasks-by-priority`, `defer-work-until-scroll-ends`, `conditional-async-dependencies` |
+| CLS | `defer-rendering-heavy-content` (plus layout-stability patterns in `guides/performance/performance.md` — explicit `width`/`height`, font fallbacks) |
+
+### Network fallback
+
+If `npx` or network is unavailable, skip MWG at Step 2.5 and note "MWG consultation skipped (network unavailable)" in the proposal. Hypotheses then rely on Step 2 code discovery only.
