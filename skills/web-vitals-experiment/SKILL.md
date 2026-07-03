@@ -1,13 +1,27 @@
 ---
 name: web-vitals-experiment
-description: Analyze P75 Web Vitals field data from Databricks (core_dev.dsa.perf_web_vitals_daily) and propose a per-device (mobile vs desktop) optimization experiment for the adRise/www web app. Use when the user wants to improve Core Web Vitals / Google Search Console performance, asks about LCP, INP, CLS, FCP, or TTFB by route, mentions perf_web_vitals_daily or webVitals route IDs, or runs /fe-toolkit:web-vitals-experiment.
+description: Analyze P75 Web Vitals field data from Databricks (core_dev.dsa.perf_web_vitals_daily) and propose a per-device (mobile vs desktop) optimization experiment for the adRise/www web app. Use when the user wants to improve Core Web Vitals / Google Search Console performance, asks about LCP, INP, CLS, FCP, or TTFB by route, mentions perf_web_vitals_daily or webVitals route IDs, or runs /fe-toolkit:web-vitals-experiment. After the proposal is approved, can optionally ship end-to-end (Jira ticket, Statsig experiment in setup, www implementation, draft PR).
 allowed-tools:
   - Bash(bash *query_web_vitals.sh*)
   - Bash(npx browserslist:*)
   - Bash(npx -y browserslist:*)
   - Bash(npx modern-web-guidance@latest:*)
   - Bash(npx -y modern-web-guidance@latest:*)
+  - Bash(npx prettier:*)
+  - Bash(npx -y prettier:*)
   - Bash(git rev-parse:*)
+  - Bash(git fetch:*)
+  - Bash(git checkout:*)
+  - Bash(git branch:*)
+  - Bash(git add:*)
+  - Bash(git commit:*)
+  - Bash(git push:*)
+  - Bash(git diff:*)
+  - Bash(git status:*)
+  - Bash(gh pr create:*)
+  - Bash(gh auth status:*)
+  - Bash(yarn jest:*)
+  - Bash(yarn lint:base:*)
   - Bash(command -v databricks)
   - Bash(databricks auth profiles:*)
   - Bash(databricks warehouses list:*)
@@ -17,13 +31,14 @@ allowed-tools:
 
 You turn Web Vitals **field data** into a concrete, review-ready **optimization experiment proposal** for the Tubi web app (`adRise/www`). You optimize for **P75**, because the Google Search Console (GSC) Core Web Vitals report classifies URL groups by field-data P75. You design **mobile and desktop as separate experiments** — they share a metric but their bottlenecks and implementations differ.
 
-This skill **proposes**; it does not change `www` behavior, create Statsig experiments, or open PRs. The only files you write are the per-device proposal docs. You pause at three approval gates and never skip past one without an explicit user choice.
+By default this skill **proposes only**: it writes the per-device proposal doc(s) under `doc/web-vitals/` and stops. If the developer explicitly approves **GATE 3 ("Ship it?")**, it continues into an end-to-end shipping pipeline — Jira ticket, Statsig experiment (left in `setup`), www implementation, and a draft PR. You pause at three approval gates (GATE 1, GATE 2, GATE 3) and never skip past one without an explicit user choice.
 
 The read-only data commands this skill runs — the bundled `query_web_vitals.sh`, `npx browserslist`, `npx modern-web-guidance@latest`, and the `git`/`databricks` pre-flight checks — are pre-approved via this skill's `allowed-tools` frontmatter, so they run without a per-command permission prompt. That only removes the tool-approval popups; it does **not** remove the GATE stops, which are conversational pauses where you must wait for the developer's explicit choice.
 
 ## Operating constraints
 
-- Read-only on `www` source. The single allowed write is the proposal doc(s) under `doc/web-vitals/` in the www repo (www's existing docs convention is the singular `doc/`, not `docs/`).
+- **Steps 0–4 (propose):** read-only on `www` source except the proposal doc(s) under `doc/web-vitals/` (www's existing docs convention is the singular `doc/`, not `docs/`).
+- **Steps 5–10 (ship, GATE 3 only):** may write experiment config, selector, implementation, specs, and the proposal-doc link updates in `www`. See [reference.md](reference.md) "Shipping pipeline" for frozen defaults and MCP call shapes.
 - **Web platform only.** All data queries filter `platform = 'web'`; all code-path discovery and optimizations target the browser web app (`adRise/www`). Do not propose TV, mobile-native, or other platform changes.
 - Headline target is one of the three **GSC-ranked** Core Web Vitals: **LCP, INP, CLS**. Treat **FCP** and **TTFB** as diagnostics / guardrails only — never as the headline metric.
 - Always keep mobile and desktop separate. If the user did not pin a device, produce one proposal per device for the chosen route+metric.
@@ -59,7 +74,14 @@ Copy this checklist and track progress:
 - [ ] Step 3.5: Adversarial self-review of the hypotheses; revise/downgrade before presenting
 - [ ] GATE 2: user picks a hypothesis
 - [ ] Step 4: Render per-device experiment proposal doc(s)
-- [ ] GATE 3 (optional): scaffold experimentV2 config + selector stubs
+- [ ] GATE 3: "Ship it?" — STOP; developer approves full pipeline or stops at proposal doc
+- [ ] Step 5: Create Jira ticket under Epic TWEBGROWTH-336 (GATE 3 only)
+- [ ] Step 6: Create Statsig experiment in setup — never start (GATE 3 only)
+- [ ] Step 7: Sync config + selector into www on TICKET branch (GATE 3 only)
+- [ ] Step 8: Implement optimization — wire selector into real render path (GATE 3 only)
+- [ ] Step 8.5: Adversarial pre-PR review + scoped lint/jest (GATE 3 only)
+- [ ] Step 9: Push branch + draft PR via www write-pr-description skill (GATE 3 only)
+- [ ] Step 10: Update proposal doc with Jira / Statsig / PR links (GATE 3 only)
 ```
 
 ### Step 0 - Build the ROUTE_ID -> route map and browserslist policy
@@ -214,30 +236,122 @@ Each proposal must include:
 - Target: route (name + path), metric, device, current `w_p75` + status, target P75 (the next better GSC band, e.g. poor → needs-improvement, or into `good`), and the P75 caveat.
 - Hypothesis & rationale, grounded in Step 2 code citations and Step 2.5 MWG guide id(s) (when available).
 - Browser compatibility & fallback: resolved browserslist target, MWG guide id(s), each feature introduced, compat status vs browserslist, and the fallback for any out-of-target feature (see template).
-- Proposed `ExperimentDescriptor`: a `webott_web_*` snake_case `name`, the parameter(s) and their union types, and `defaultParams` set to control. Plus the selector file path under `src/common/selectors/experiments/`.
+- Proposed `ExperimentDescriptor`: a `webott_web_*` snake_case `name` (or `webott_web_mobile_*` for mobile-only targets), the parameter(s) and their union types, and `defaultParams` set to control. Plus the selector file path under `src/common/selectors/experiments/`.
 - Variant structure: `control` + one variant per optimization, scoped to one experiment group.
 - Primary success metric: P75 of the target metric for that exact route+device cold-navigate cohort, read from this table; include the `query_web_vitals.sh --mode trend` command to baseline it.
 - Guardrail metrics: the other two CWVs on the route, plus `sample_count` (no traffic regression) and the FCP/TTFB diagnostics.
 - Exposure / bucketing: pin bots to control until there is a verdict (SEO safety) — follow the precedent in `webottWebEpisodeSsrPerf` / `episodeSeriesSsrModeSelector`.
 - Rollback plan.
+- Shipping status placeholders (Jira / Statsig / PR links — filled in by Step 10 if GATE 3 proceeds).
 
 After writing, list the doc paths as markdown links.
 
-### GATE 3 - Optional scaffold
+### GATE 3 - "Ship it?"
 
-Only if the user explicitly asks, scaffold the **inert** experimentV2 wiring (no behavior change): the config file under `src/common/experimentV2/configs/` and a selector stub under `src/common/selectors/experiments/`, both defaulting to `control`. Do not wire the param into any render path, do not create the Statsig experiment, do not open a PR. Confirm before writing, and follow reference.md exactly.
+**This is a hard stop.** After Step 4, the default is to stop at the proposal doc. Only proceed to Steps 5–10 if the developer explicitly approves the full shipping pipeline.
+
+Print a concrete **shipping plan** (not just "yes/no"):
+
+- **Jira:** a `Story` under Epic [TWEBGROWTH-336](https://tubitv.atlassian.net/browse/TWEBGROWTH-336) ("Web Vitals Optimizations"), label `platform-web`.
+- **Statsig experiment:** id `webott_web_<slug>` (desktop) or `webott_web_mobile_<slug>` (mobile), groups, team, metrics, targetApps, allocation, duration — all defaulted from [reference.md](reference.md) "Shipping pipeline" (shown for transparency only; no per-run confirmation needed).
+- **Branch:** `<JIRA-KEY>-<short-slug>` (e.g. `TWEBGROWTH-512-movie-detail-lcp-mobile`).
+- **PR:** opens a **draft** PR when done, body generated by www's `write-pr-description` skill.
+- **Experiment status:** the Statsig experiment will be created in **`setup` and left NOT started**. Starting the experiment is a deliberate manual action the developer takes **only after the code has been tested and shipped to production**. Do not surprise the developer by expecting the experiment to be running.
+
+Then ask: proceed with the full pipeline, or stop at the proposal doc?
+
+**Collision checks** before creating anything (if the developer approves):
+
+- Probe the candidate experiment id via Statsig MCP (`Get_Experiment_Details_by_ID` or `Get_List_of_Experiments`).
+- `git fetch` + check whether `<JIRA-KEY>-<short-slug>` already exists in `www`.
+
+If either already exists, stop and ask instead of overwriting.
+
+### Step 5 - Create the Jira ticket (under Epic TWEBGROWTH-336)
+
+Create the ticket as a **child of Epic [TWEBGROWTH-336](https://tubitv.atlassian.net/browse/TWEBGROWTH-336)** ("Web Vitals Optimizations", project `TWEBGROWTH`). Use `createJiraIssue` (Atlassian MCP) — see [reference.md](reference.md) for the exact payload.
+
+- `projectKey: TWEBGROWTH`, `issueTypeName: Story`
+- `parent: "TWEBGROWTH-336"` — sets the Epic parent. If the create is rejected for the parent field, fall back to creating the Story and then linking it under the Epic (retry with the Epic-link custom field, or `createIssueLink`), then verify the parent stuck.
+- `additional_fields: { labels: ["platform-web"] }`
+- `summary` from the proposal title
+- `description` composed from current field-data state, Step 2 code citations, Step 3/3.5 hypothesis + kill criteria, and the experiment design/groups table — mirroring `TWEBGROWTH-505`'s structure (Context / Measurement / Root Cause / Experiment Design / Acceptance Criteria).
+
+Capture the **returned ticket key** — it is the source of truth for the branch name (Step 7), the PR's ticket link (Step 9), and the proposal-doc link (Step 10). Print the key + URL.
+
+If the Atlassian MCP is unavailable, stop and ask the developer for an existing ticket key rather than skipping ticket creation silently.
+
+### Step 6 - Create the Statsig experiment
+
+Use Statsig MCP — see [reference.md](reference.md) for frozen defaults and the fetch-then-update pattern. Experiment id: `webott_web_<slug>` (desktop) or `webott_web_mobile_<slug>` (mobile).
+
+1. `Create_Experiment` with `idType: device_id`, hypothesis, groups (`Control` + one group per variant, even allocation split with rounding remainder on Control), primary metrics, targetApps, team, allocation.
+2. **Fetch-then-update:** `Get_Experiment_Details_by_ID` → `Update_Experiment_Entirely` echoing back required fields and adding `secondaryMetrics` + `duration`. **`status` MUST stay `"setup"` in both the create and the update.**
+
+> **CRITICAL — never start the experiment.** This skill only ever leaves the experiment in `status: "setup"`. It must **never** transition it to `active`/started, under any circumstance. Starting the experiment is a deliberate manual action the developer takes **only after the code has been tested and shipped to production**. The skill must never call any start/launch path. If the MCP ever returns the experiment as `active`, treat that as an error and report it.
+
+Device split: mobile-only or desktop-only targets keep `targetingGateID: null` and are scoped in the **selector** (device-scoped exposure / separate `*_mobile` experiment), consistent with reference.md "Mobile vs desktop in one experiment".
+
+Print the console URL from reference.md.
+
+If the Statsig MCP is unavailable, stop and tell the developer to create it manually in the console (give them the exact payload) and supply the resulting id before continuing.
+
+### Step 7 - Sync config + selector into `www`
+
+1. In the `www` checkout: `git fetch`, branch off latest `master` as `<JIRA-KEY>-<short-slug>`.
+2. Generate `src/common/experimentV2/configs/<camelCaseName>.ts` by replicating `scripts/codegen-experiment.ts`'s template logic (camelCase the experiment id, union type from groups' `parameterValues`, `defaultParams` = control's values) using the experiment payload from Step 6.
+3. Write `src/common/selectors/experiments/<camelCaseName>Selector.ts` per [reference.md](reference.md) (bots pinned to `control`).
+4. Run `npx prettier --write` on both new files.
+
+### Step 8 - Implement the optimization
+
+Using the Step 2 `path:line` citations and the approved hypothesis's described behavior per variant, wire the new selector into the real call site and implement each variant's behavior (mirroring the `Video.fetchData` control/parallel/defer branching precedent). Add/extend a selector unit test (bot pinned to control + per-arm resolution) following `webottWebEpisodeSsrPerfSelector.spec.ts`.
+
+This step is inherently hypothesis-specific — the skill uses its own Step 2/3 findings as the implementation spec.
+
+### Step 8.5 - Adversarial pre-PR review
+
+Before pushing, re-read the diff as a skeptical reviewer: does the implementation match the approved hypothesis and the compat/fallback plan from Step 2.5? Then run scoped checks only:
+
+```bash
+yarn jest <changed spec paths>
+yarn lint:base <changed files>
+```
+
+Fix findings before proceeding.
+
+### Step 9 - Push branch + open draft PR
+
+1. Commit the branch work (config + selector + implementation + specs + the Step 4 proposal doc) with a Conventional-Commits message.
+2. `git push -u origin HEAD`.
+3. **Generate the PR title + body by following www's `write-pr-description` skill** — read `.cursor/skills/write-pr-description/SKILL.md` (or the `.claude/skills/` mirror) from the www checkout and follow it: diff vs `master`, pull context from the Jira ticket created in Step 5, produce the narrative "Which problem" + terse "Main changes" sections, the Conventional-Commits title, and the "Pull request description generated with AI assistance" watermark. Ensure the Ticket/documents/resources section carries the Jira + Statsig console links.
+4. Create the draft PR: `gh pr create --draft --base master --title <generated title> --body <generated body>`.
+
+### Step 10 - Close the loop on the proposal doc
+
+Update the `doc/web-vitals/...md` with the created Jira ticket link, Statsig console link, and PR link (Shipping status section), then commit + push that doc update onto the same branch/PR.
+
+### Partial-failure behavior
+
+The pipeline touches four external systems (Jira, Statsig, git remote, GitHub) in sequence. On any mid-pipeline failure, **stop and report every artifact already created with its URL/id** (e.g. "Jira TWEBGROWTH-512 and Statsig `webott_web_...` were created; branch push failed at Step 9 — resolve and re-run from Step 9"). Never auto-delete/roll back a created Jira issue or Statsig experiment, and never silently retry a create (which would risk duplicates).
 
 ## Hard rules
 
 - NEVER auto-select the target at GATE 1 when the developer has not pinned all of route + metric + device. Present the candidate shortlist with a labelled recommendation and STOP for their explicit choice — a clear top score is a recommendation to surface, not a decision to make for them. The same "recommend, then wait" rule holds at GATE 2.
-- NEVER write outside `doc/web-vitals/` unless GATE 3 scaffolding was explicitly approved.
+- NEVER write outside `doc/web-vitals/` unless GATE 3 was explicitly approved (Steps 5–10).
 - NEVER silently overwrite an existing proposal doc; confirm with the user first.
 - NEVER pick LCP/INP/CLS *and* a diagnostic (FCP/TTFB) as co-headline metrics — one headline CWV per experiment.
 - NEVER merge mobile and desktop into one proposal.
 - NEVER auto-start a stopped SQL warehouse; if none is running, tell the user.
+- NEVER create a Jira ticket outside Epic `TWEBGROWTH-336` — every ticket is a `Story` child of that Epic.
+- NEVER start a Statsig experiment — always leave it in `status: "setup"`. Starting is manual, post-launch only.
+- NEVER call any Statsig start/launch path. If the experiment is returned as `active`, treat that as an error.
+- NEVER silently retry a Jira or Statsig create on failure (risk of duplicates).
 - ALWAYS state the weighted-P75 approximation caveat when quoting window numbers.
 - ALWAYS map every `dimension_key` through `webVitalsRoutes.ts`; flag unmapped keys instead of guessing.
 - ALWAYS scope optimizations to the **web** platform (`platform = 'web'` in data; web app code paths in www only).
 - ALWAYS gate MWG feature recommendations on www's resolved browserslist; any out-of-target feature MUST ship a concrete fallback or the hypothesis is dropped/redesigned.
 - ALWAYS consult MWG at Step 2.5 when network is available; note in the proposal when it was skipped.
 - ALWAYS run the Step 3.5 adversarial self-review before GATE 2; surface anything you downgraded or dropped instead of silently smoothing it over.
+- ALWAYS use the returned Jira ticket key as the branch-name prefix and link source of truth.
+- ALWAYS prefix Statsig experiment ids with `webott_web_` (or `webott_web_mobile_` for mobile-only targets).

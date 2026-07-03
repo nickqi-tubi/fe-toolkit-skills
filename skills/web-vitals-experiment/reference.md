@@ -201,3 +201,171 @@ Use search first; these ids are common starting points when symptoms match:
 ### Network fallback
 
 If `npx` or network is unavailable, skip MWG at Step 2.5 and note "MWG consultation skipped (network unavailable)" in the proposal. Hypotheses then rely on Step 2 code discovery only.
+
+## Shipping pipeline (GATE 3 only)
+
+Load this section when the developer approves GATE 3 ("Ship it?"). It holds frozen defaults for Jira, Statsig, branch naming, config codegen, and PR creation. The PR body is **not** templated here — delegate to www's `write-pr-description` skill (`.cursor/skills/write-pr-description/SKILL.md` or `.claude/skills/write-pr-description/SKILL.md` in the www checkout).
+
+### Frozen defaults
+
+| setting | value |
+|---------|-------|
+| Jira project | `TWEBGROWTH` ("Web Growth") |
+| Jira Epic parent | `TWEBGROWTH-336` ("Web Vitals Optimizations") |
+| Jira issue type | `Story` |
+| Jira label | `platform-web` |
+| Branch name | `<JIRA-KEY>-<short-slug>` (e.g. `TWEBGROWTH-512-movie-detail-lcp-mobile`) |
+| Statsig org id (console URL) | `43UGszvUzuvL3Z3ispUMFe` |
+| Statsig console URL | `https://console.statsig.com/43UGszvUzuvL3Z3ispUMFe/experiments/<id>/setup` |
+| Statsig experiment id prefix | `webott_web_` (desktop) or `webott_web_mobile_` (mobile-only) |
+| Statsig `idType` | `device_id` |
+| Statsig `team` | `4M14G3IETR9JvxdnaUCl9W` ("User Identity & Registration") |
+| Statsig `targetApps` | `["web", "web-node-proxy"]` |
+| Statsig `allocation` | `100` |
+| Statsig `duration` | `21` (days) |
+| Statsig `defaultConfidenceInterval` | `"95"` |
+| Statsig `bonferroniCorrection` | `false` |
+| Statsig `targetingGateID` | `null` (device scoping lives in the selector) |
+| Statsig `status` | **`"setup"` — never `"active"`** |
+
+**Primary metrics** (both `user_warehouse`):
+
+- `tvt`
+- `qualified_view_days`
+
+**Secondary metrics** (all `user_warehouse`):
+
+- `session_conversion_5min`
+- `conversion_5min_new_visitors_d1`
+- `tvt_capped_daily`
+- `revenue_unbudgeted`
+- `visit_days`
+- `conversion_5min`
+- `registration_rate_active_visitors`
+
+### Jira ticket creation (Step 5)
+
+Use Atlassian MCP `createJiraIssue`:
+
+```json
+{
+  "cloudId": "tubitv.atlassian.net",
+  "projectKey": "TWEBGROWTH",
+  "issueTypeName": "Story",
+  "parent": "TWEBGROWTH-336",
+  "summary": "<proposal title, e.g. Reduce movieDetail LCP via priority poster (+ experiment)>",
+  "description": "<markdown: Context / Measurement / Root Cause / Experiment Design / Acceptance Criteria>",
+  "additional_fields": { "labels": ["platform-web"] }
+}
+```
+
+If `parent` is rejected, create the Story without it, then link under the Epic via `createIssueLink` or the Epic-link custom field, and verify the parent stuck.
+
+The **returned ticket key** drives the branch name and all links. Jira URL: `https://tubitv.atlassian.net/browse/<KEY>`.
+
+### Statsig experiment creation (Step 6)
+
+**CRITICAL:** the experiment must **always** remain in `status: "setup"`. Never start it. Starting is manual, post-launch only.
+
+#### 1. Create_Experiment (Statsig MCP)
+
+```json
+{
+  "params": {
+    "application/json": {
+      "id": "webott_web_<slug>",
+      "name": "webott_web_<slug>",
+      "idType": "device_id",
+      "hypothesis": "<belief + evidence + expected ranking + kill criteria>",
+      "allocation": 100,
+      "targetingGateID": null,
+      "team": "4M14G3IETR9JvxdnaUCl9W",
+      "targetApps": ["web", "web-node-proxy"],
+      "groups": [
+        {
+          "name": "Control",
+          "size": 50,
+          "parameterValues": { "<param>": "control" }
+        },
+        {
+          "name": "T1 <variant label>",
+          "size": 50,
+          "parameterValues": { "<param>": "<variant>" }
+        }
+      ],
+      "primaryMetrics": [
+        { "name": "tvt", "type": "user_warehouse" },
+        { "name": "qualified_view_days", "type": "user_warehouse" }
+      ]
+    }
+  }
+}
+```
+
+For 3 groups, split sizes evenly with rounding remainder on Control (e.g. 33.4 / 33.3 / 33.3). For mobile-only targets, use id `webott_web_mobile_<slug>`.
+
+#### 2. Fetch-then-update (Statsig MCP)
+
+`Create_Experiment` does not accept `secondaryMetrics`, `duration`, or `status`. After create:
+
+1. `Get_Experiment_Details_by_ID` with `path_id: "<experiment id>"`.
+2. `Update_Experiment_Entirely` with `path_id` and `application/json` echoing back the **required** fields from the GET response (`description`, `idType`, `hypothesis`, `groups`, `allocation`, `targetingGateID`, `bonferroniCorrection`, `defaultConfidenceInterval`, `status`) and adding:
+
+```json
+{
+  "secondaryMetrics": [
+    { "name": "session_conversion_5min", "type": "user_warehouse" },
+    { "name": "conversion_5min_new_visitors_d1", "type": "user_warehouse" },
+    { "name": "tvt_capped_daily", "type": "user_warehouse" },
+    { "name": "revenue_unbudgeted", "type": "user_warehouse" },
+    { "name": "visit_days", "type": "user_warehouse" },
+    { "name": "conversion_5min", "type": "user_warehouse" },
+    { "name": "registration_rate_active_visitors", "type": "user_warehouse" }
+  ],
+  "duration": 21,
+  "status": "setup"
+}
+```
+
+Full-replace semantics: re-sending the fetched object avoids clobbering fields. **`status` MUST be `"setup"`** — if the GET returns `"active"`, treat that as an error.
+
+### Config codegen (Step 7)
+
+Replicate `scripts/codegen-experiment.ts` inline using the experiment payload from Step 6 (no API key needed):
+
+1. **camelCase** the experiment id (lodash `camelCase` rule — `webott_web_foo_bar` → `webottWebFooBar`).
+2. For each param key, collect all values across groups → union type (`'control' | 'variant'` or `boolean`).
+3. `defaultParams` = control group's `parameterValues`.
+4. Write to `src/common/experimentV2/configs/<camelCaseName>.ts`.
+5. Write selector to `src/common/selectors/experiments/<camelCaseName>Selector.ts` (bots pinned to `control`).
+6. `npx prettier --write` both files.
+
+Template (from `codegen-experiment.ts`):
+
+```ts
+import type { ExperimentDescriptor } from './types';
+
+export const <camelCaseName>: ExperimentDescriptor<{
+  <param>: <union type from groups>
+}> = {
+  name: '<experiment id>',
+  defaultParams: {
+    <param>: 'control',
+  },
+};
+```
+
+### PR creation (Step 9)
+
+Do **not** hand-write the PR body. Follow www's `write-pr-description` skill:
+
+1. Read `.cursor/skills/write-pr-description/SKILL.md` (or `.claude/skills/` mirror).
+2. Diff current branch vs `master`.
+3. Pull context from the Jira ticket (Step 5).
+4. Generate narrative "Which problem" + terse "Main changes", Conventional-Commits title, watermark.
+5. Fill Ticket/documents/resources with Jira + Statsig console links.
+6. `gh pr create --draft --base master --title <title> --body <body>`.
+
+### Partial-failure recovery
+
+On mid-pipeline failure, report every artifact already created (Jira key + URL, Statsig id + console URL, branch name, PR URL). Never auto-delete. Never silently retry a create. Developer can re-run from the failed step.

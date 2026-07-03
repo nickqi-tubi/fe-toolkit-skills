@@ -1,8 +1,18 @@
 ---
-description: Analyze P75 Web Vitals from Databricks and propose a per-device (mobile/desktop) optimization experiment for the www repo.
+description: Analyze P75 Web Vitals from Databricks and propose a per-device (mobile/desktop) optimization experiment for the www repo. After proposal approval, can optionally ship end-to-end (Jira, Statsig setup, implementation, draft PR).
 argument-hint: "[routeId] [metric] [device]"
 allowed-tools:
   - Bash(git rev-parse:*)
+  - Bash(git fetch:*)
+  - Bash(git checkout:*)
+  - Bash(git branch:*)
+  - Bash(git add:*)
+  - Bash(git commit:*)
+  - Bash(git push:*)
+  - Bash(git diff:*)
+  - Bash(git status:*)
+  - Bash(gh pr create:*)
+  - Bash(gh auth status:*)
   - Bash(command -v databricks)
   - Bash(databricks auth profiles:*)
   - Bash(bash *query_web_vitals.sh*)
@@ -10,9 +20,13 @@ allowed-tools:
   - Bash(npx -y browserslist:*)
   - Bash(npx modern-web-guidance@latest:*)
   - Bash(npx -y modern-web-guidance@latest:*)
+  - Bash(npx prettier:*)
+  - Bash(npx -y prettier:*)
+  - Bash(yarn jest:*)
+  - Bash(yarn lint:base:*)
 ---
 
-You are operating as a frontend performance engineer. Your job for this turn is to turn Web Vitals field data into a concrete, review-ready **optimization experiment proposal** for the Tubi web app (`adRise/www`). You behave as if **plan mode is active**: you may read files and run read-only Databricks queries, but you do not edit www source, create experiments in Statsig, or open PRs. The only files you may write are the experiment-proposal docs the skill produces.
+You are operating as a frontend performance engineer. Your job for this turn is to turn Web Vitals field data into a concrete, review-ready **optimization experiment proposal** for the Tubi web app (`adRise/www`). By default you may read files and run read-only Databricks queries, and write only the experiment-proposal docs under `doc/web-vitals/`. If the developer approves **GATE 3 ("Ship it?")**, the skill continues into the full shipping pipeline (Jira ticket, Statsig experiment in `setup`, www implementation, draft PR).
 
 ## Inputs
 
@@ -41,7 +55,7 @@ If a Databricks MCP server is available in this session, you may prefer it over 
 
 ## Step 3 - Invoke the skill
 
-Invoke the `web-vitals-experiment` skill. It owns the query cookbook, the Core Web Vitals P75 thresholds, the prioritization model, the code-path discovery routine, the experiment-proposal template, and **Modern Web Guidance** consultation gated by www's `browserslist`. Follow its instructions exactly, including its three approval gates (target selection, hypothesis selection, optional scaffold).
+Invoke the `web-vitals-experiment` skill. It owns the query cookbook, the Core Web Vitals P75 thresholds, the prioritization model, the code-path discovery routine, the experiment-proposal template, **Modern Web Guidance** consultation gated by www's `browserslist`, and (when GATE 3 is approved) the shipping pipeline. Follow its instructions exactly, including its three approval gates (GATE 1: target selection, GATE 2: hypothesis selection, GATE 3: "Ship it?").
 
 After code-path discovery, the skill searches and retrieves [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance) guides via `npx` (requires network). It reads www's `browserslist` from `package.json` (or `.browserslistrc`) and resolves it with `npx browserslist`; any optimization that uses a browser feature outside that matrix must include a concrete fallback so functionality is unaffected on unsupported browsers. If `npx`/network is unavailable, the skill skips MWG and notes that in the proposal.
 
@@ -49,4 +63,7 @@ Pass along any hints from `$ARGUMENTS` so the skill can skip straight to the rel
 
 ## Step 4 - Hand off
 
-End by listing the proposal doc(s) written (one per device) as markdown links, and remind the user that implementing the variant, Playwright before/after validation, and the PR are deliberately out of scope for this command.
+End by listing the proposal doc(s) written (one per device) as markdown links.
+
+- If GATE 3 was **not** approved: remind the user that implementing the variant, Playwright before/after validation, and the PR are out of scope until they approve GATE 3 on a follow-up run.
+- If GATE 3 **was** approved: list the created Jira ticket, Statsig experiment (in `setup` — not started), branch, and draft PR links. Remind the user that **starting the Statsig experiment is manual** and should happen only after the code is tested and shipped to production.

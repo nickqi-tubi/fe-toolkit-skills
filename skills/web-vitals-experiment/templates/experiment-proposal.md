@@ -101,6 +101,17 @@ export const <camelCaseName>: ExperimentDescriptor<{
 
 <How to revert: set the param back to `control` in Statsig / ship a revert. State blast radius — route+device only.>
 
+## Shipping status
+
+_Filled in by Step 10 when GATE 3 ("Ship it?") is approved. Leave as `_pending_` until then._
+
+- **Jira:** _pending_ (Epic [TWEBGROWTH-336](https://tubitv.atlassian.net/browse/TWEBGROWTH-336))
+- **Statsig:** _pending_
+- **Branch:** _pending_
+- **PR:** _pending_
+
 ## Out of scope (follow-up)
 
-Implementing the variant code, Playwright before/after real-browser validation, bundle-diff, and the PR. This document is the input to that follow-up.
+When GATE 3 is not approved: implementing the variant code, Playwright before/after real-browser validation, bundle-diff, and the PR. This document is the input to that follow-up.
+
+When GATE 3 is approved, Steps 5–10 handle implementation and the draft PR; Playwright before/after validation and bundle-diff remain follow-up work on the PR.
