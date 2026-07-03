@@ -10,14 +10,19 @@
     {
       "name": "fe-toolkit",
       "source": "./",
-      "description": "Frontend dev workflow: Jira ticket -> Figma design -> plan mode -> implement -> conventional commit.",
+      "description": "Frontend dev workflow: Jira ticket -> Figma design -> plan mode -> implement -> conventional commit, plus Web Vitals optimization experiments from Databricks field data and Statsig.",
       "category": "development",
       "tags": [
         "frontend",
         "jira",
         "figma",
         "plan-mode",
-        "conventional-commits"
+        "conventional-commits",
+        "web-vitals",
+        "performance",
+        "databricks",
+        "statsig",
+        "experimentation"
       ]
     }
   ]

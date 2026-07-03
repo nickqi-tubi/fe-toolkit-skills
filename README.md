@@ -8,14 +8,17 @@ A Claude Code plugin that packages Tubi FE's best-practice frontend development 
                 ... implement ...
 /fe-toolkit:review                ->  FE-focused diff review (a11y / perf / types / tests)
 /fe-toolkit:commit                ->  draft a Conventional Commits v1.0.0 message
+
+/fe-toolkit:web-vitals-experiment ->  analyze P75 Web Vitals (Databricks) + propose a per-device experiment
 ```
 
 It bundles:
 
 - The **Atlassian Rovo MCP** inline (Streamable HTTP), so Jira/Confluence reads work out of the box with one OAuth.
 - The official **Figma plugin** as a dependency, so Figma reads (and Figma's own skills) come along for free with one OAuth.
+- The **Statsig MCP** inline (Streamable HTTP), authenticated up front so a future skill can create/manage the experiment (gate, group, params) directly instead of just proposing it in a doc.
 - Subagents: `jira-reader`, `figma-reader`, `code-reviewer`.
-- Skills: `conventional-commit`, `save-plan`.
+- Skills: `conventional-commit`, `save-plan`, `web-vitals-experiment`.
 
 ## Install
 
@@ -66,33 +69,35 @@ When the plugin is enabled, Claude Code will:
 
 1. Pull in the official Figma plugin (`figma@claude-plugins-official`) as a dependency. This gives you the `figma` MCP server plus Figma's bundled skills (`figma-use`, `figma-generate-design`, `figma-code-connect`, etc.).
 2. Start the inline Atlassian MCP server (`atlassian`) pointing at `https://mcp.atlassian.com/v1/mcp/authv2`.
+3. Start the inline Statsig MCP server (`statsig`) pointing at `https://api.statsig.com/v1/mcp`.
 
 Verify with:
 
 ```bash
 claude plugin list
-/mcp        # in a Claude Code session - should list `atlassian` and `figma`
-/plugin     # should show fe-toolkit enabled with 5 commands, 3 agents, 2 skills, 1 MCP server, 1 hook
+/mcp        # in a Claude Code session - should list `atlassian`, `statsig`, and `figma`
+/plugin     # should show fe-toolkit enabled with 6 commands, 3 agents, 3 skills, 2 MCP servers, 1 hook
 ```
 
 ## First-run auth
 
-Both MCPs use OAuth 2.1; nothing is hardcoded. The recommended way to complete both flows in one shot is:
+All three MCPs use OAuth 2.1; nothing is hardcoded. The recommended way to complete every flow in one shot is:
 
 ```text
 /fe-toolkit:auth
 ```
 
-That command checks each MCP server, opens a browser tab for any one that needs authentication (Atlassian, then Figma), and verifies the resulting token works. Run it once after install.
+That command checks each MCP server, opens a browser tab for any one that needs authentication (Atlassian, Figma, then Statsig), and verifies the resulting token works. Run it once after install.
 
 ### Why not just let it auto-trigger?
 
-Each MCP server's OAuth token is shared across all of Claude Code (it lives in your system keychain under `Claude Code-credentials`), so the very first time you use any tool that needs Atlassian or Figma OAuth, a browser tab opens automatically and the token persists from then on. In practice, though:
+Each MCP server's OAuth token is shared across all of Claude Code (it lives in your system keychain under `Claude Code-credentials`), so the very first time you use any tool that needs Atlassian, Figma, or Statsig OAuth, a browser tab opens automatically and the token persists from then on. In practice, though:
 
 - If you have used Atlassian Cloud from another Claude Code plugin before, that token is already cached and Atlassian shows `✓ Connected` from day one - no browser needed.
 - The Figma MCP is newer, so most users hit `! Needs authentication` the first time. Subagents are not guaranteed to bubble the OAuth flow up to a browser tab in your terminal session, so the call can fail silently with a "permissions issue" error instead of opening the browser. Running `/fe-toolkit:auth` from the top-level agent avoids that path entirely.
+- The Statsig MCP is authenticated proactively even though no command calls its write tools yet - see [`/fe-toolkit:web-vitals-experiment`](#fe-toolkitweb-vitals-experiment-routeid-metric-device) below for why.
 
-A `SessionStart` hook detects this state on every Claude Code launch and prints a one-line reminder if any MCP server tied to this plugin is still `Needs authentication`. The reminder points you straight at `/fe-toolkit:auth`.
+A `SessionStart` hook detects this state on every Claude Code launch and prints a one-line reminder if any MCP server tied to this plugin is still `Needs authentication`, or if the `databricks` CLI is installed but has no tubi-dev workspace profile. The reminder points you straight at `/fe-toolkit:auth` (or `databricks auth login`).
 
 ### Manual fallback
 
@@ -104,7 +109,7 @@ If `/fe-toolkit:auth` does not work for some reason, you can complete OAuth via 
 
 then arrow-key to the row that says `Needs authentication` and press Enter. Same flow, just one extra step.
 
-Once both servers show `✓ Connected` in `claude mcp list`, tokens persist across sessions until they expire (months, typically) - subsequent runs need no interaction.
+Once all servers show `✓ Connected` in `claude mcp list`, tokens persist across sessions until they expire (months, typically) - subsequent runs need no interaction.
 
 ## Usage loop
 
@@ -125,7 +130,7 @@ flowchart LR
 
 ### `/fe-toolkit:auth`
 
-One-shot OAuth into every MCP server this plugin needs (Atlassian + Figma). Idempotent - if a server is already authenticated it is left alone. Run once after install, and any time `claude mcp list` shows a `Needs authentication` row for a plugin-provided server.
+One-shot auth check for everything fe-toolkit needs: OAuth into every MCP server (Atlassian + Figma + Statsig) and verification that the `databricks` CLI is logged in to the **tubi-dev** workspace (`https://tubi-dev.cloud.databricks.com`), which `/fe-toolkit:web-vitals-experiment` relies on. Idempotent - anything already authenticated is left alone. Each target is verified with a real call. Run once after install, and any time `claude mcp list` shows a `Needs authentication` row or the Databricks CLI loses its tubi-dev profile. A databricks-only or statsig-only failure does not block the Jira/Figma workflow; fix databricks with `databricks auth login --host https://tubi-dev.cloud.databricks.com`, and fix statsig by re-running `/fe-toolkit:auth` or `/mcp`.
 
 ### `/fe-toolkit:plan-ticket <TICKET-ID>`
 
@@ -143,6 +148,12 @@ Diffs the current branch against `origin/main` (or the ref you pass) and dispatc
 
 Drafts a [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) message based on what is actually staged (or asks before staging more), shows it to you, then commits. Refuses `--no-verify`, refuses to commit obvious secret files, and never amends pushed commits.
 
+### `/fe-toolkit:web-vitals-experiment [routeId] [metric] [device]`
+
+Run this **inside the `adRise/www` repo**. It reads P75 Web Vitals field data from Databricks (`core_dev.dsa.perf_web_vitals_daily`), maps `dimension_key` to the ROUTE_IDs in `src/common/utils/webVitalsRoutes.ts`, and ranks the worst high-traffic `route x metric x device` targets against Google's Core Web Vitals P75 thresholds (LCP/INP/CLS headline; FCP/TTFB diagnostics). It then scouts the route's code paths, ranks optimization hypotheses, and writes a per-device (mobile and desktop are designed separately) experiment proposal to `doc/web-vitals/` (www's existing docs dir) grounded in www's `experimentV2` framework. It pauses at three approval gates (pick target, pick hypothesis, optional scaffold) and never changes www behavior, creates a Statsig experiment, or opens a PR. Requires an authenticated `databricks` CLI (`databricks auth login`) and a running SQL warehouse.
+
+The plugin bundles the **Statsig MCP** (see below) for this reason: the proposal doc already contains everything (`ExperimentDescriptor` name, params, variants, metrics) needed to actually create the experiment in Statsig, so wiring that up later is a small follow-on skill rather than a new integration.
+
 ## Repo layout
 
 ```
@@ -150,13 +161,14 @@ fe-toolkit-skills/
 ├── .claude-plugin/
 │   ├── plugin.json                 # plugin manifest (this plugin)
 │   └── marketplace.json            # marketplace catalog (publishes this plugin as tubi-fe)
-├── .mcp.json                       # Atlassian Rovo (Streamable HTTP)
+├── .mcp.json                       # Atlassian Rovo + Statsig (both Streamable HTTP)
 ├── commands/
 │   ├── plan-ticket.md              # /fe-toolkit:plan-ticket
 │   ├── save-plan.md                # /fe-toolkit:save-plan
 │   ├── commit.md                   # /fe-toolkit:commit
 │   ├── review.md                   # /fe-toolkit:review
-│   └── auth.md                     # /fe-toolkit:auth
+│   ├── auth.md                     # /fe-toolkit:auth
+│   └── web-vitals-experiment.md    # /fe-toolkit:web-vitals-experiment
 ├── agents/
 │   ├── jira-reader.md
 │   ├── figma-reader.md
@@ -166,8 +178,13 @@ fe-toolkit-skills/
 │   │   ├── SKILL.md
 │   │   ├── reference.md            # condensed spec
 │   │   └── scripts/commit.sh
-│   └── save-plan/
-│       └── SKILL.md
+│   ├── save-plan/
+│   │   └── SKILL.md
+│   └── web-vitals-experiment/
+│       ├── SKILL.md
+│       ├── reference.md            # CWV thresholds, SQL cookbook, experimentV2 pattern
+│       ├── scripts/query_web_vitals.sh
+│       └── templates/experiment-proposal.md
 ├── hooks/
 │   └── hooks.json                  # SessionStart -> scripts/check-auth.sh
 ├── scripts/
@@ -181,7 +198,8 @@ fe-toolkit-skills/
 |---------|-----|
 | `/mcp` does not list `atlassian` | Run `/reload-plugins` after a manifest change. Check `claude --debug` for MCP init errors. |
 | `/mcp` does not list `figma` | Confirm the Figma plugin dependency installed: `claude plugin list`. If missing, run `claude plugin install figma@claude-plugins-official` manually. |
-| Atlassian tool call hangs | Browser OAuth was not completed. Re-run the command and click through the authorization tab. |
+| `/mcp` does not list `statsig` | Run `/reload-plugins` after a manifest change. Check `claude --debug` for MCP init errors. |
+| Atlassian or Statsig tool call hangs | Browser OAuth was not completed. Re-run `/fe-toolkit:auth` (or `/mcp`) and click through the authorization tab. |
 | Jira ticket "not found" | Confirm the cloudId your account has access to actually contains the project. The `jira-reader` subagent guesses one if multiple sites are linked - check its `Notes` section. |
 | Commit subject "too long" error | The `conventional-commit` skill caps subjects at 72 chars. Shorten or move detail into the body. |
 | `/fe-toolkit:plan-ticket` says "ticket key invalid" | Use the canonical form `[A-Z][A-Z0-9]+-\d+`, e.g. `FE-1234`, `WEB-12`. URLs are not accepted directly. |
@@ -195,6 +213,7 @@ fe-toolkit-skills/
 - Claude Code 2.1+ (plugin format and HTTP MCP transport).
 - Atlassian Cloud site with Jira and/or Confluence enabled.
 - A Figma account with access to the files you plan to reference.
+- A Statsig account/project (Console API key with read access is enough today; write access is only needed once a future skill starts creating experiments).
 - A modern browser for OAuth flows.
 
 ## Versioning

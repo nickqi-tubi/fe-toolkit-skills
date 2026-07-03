@@ -95,6 +95,19 @@ Bullets. Be explicit about anything the ticket did not answer.
 
 Keep the plan concise and specific. Do not over-engineer. Do not include emojis. Cite files using markdown links when you mention them.
 
+## Step 7.5 - Adversarial self-review
+
+Before handing the plan to the user, re-read it as a skeptical senior reviewer actively trying to find where it is wrong, incomplete, or ungrounded. This is a self-critique pass, not a formality — do not skip it or rubber-stamp your own Step 7 output. Attack the draft on:
+
+1. **Acceptance-criteria coverage**: map every acceptance criterion (and explicit ask in the ticket/Figma) to a concrete implementation step. Any criterion with no step behind it is a gap — add the step or flag it as an open question.
+2. **Missing states and edge cases**: does the plan handle loading / empty / error states, auth/permission branches, responsive + mobile, accessibility, i18n/RTL, and analytics where the feature implies them? Add whatever the ticket implies but the draft omitted.
+3. **Repo grounding**: are the cited paths, components, and conventions real (from the Step 6 scout), or assumed? Replace any hallucinated or guessed path with a real one, or mark it `investigate` instead of asserting it.
+4. **Step sequencing & sizing**: is each step genuinely commit-sized and ordered so each builds on the last? Surface hidden dependencies (schema/API changes, feature flags, migrations, rollout/back-compat) that must land before the UI work.
+5. **Testing adequacy**: does the testing strategy actually cover the new logic and the edge cases from point 2, using the repo's real test runner — not just a generic "add unit tests" line?
+6. **Honest unknowns**: are backend/API/design dependencies that are not yet ready called out in Risks & open questions, rather than silently assumed to exist?
+
+Apply the outcome directly by revising the plan — add missing steps, correct paths, re-sequence, expand testing, or move an unfounded assumption into Risks & open questions. Do not just append a critique and leave the plan unchanged. When you hand off, briefly note the most important things this review changed or surfaced, so the user sees the review happened rather than just the polished result.
+
 ## Step 8 - Hand off
 
 End your response with this exact prompt to the user:

@@ -16,12 +16,13 @@ If no plan is found in this conversation, stop and tell the user to run `/fe-too
 
 ## Procedure
 
-1. **Resolve the project root.** Use `git rev-parse --show-toplevel`. If git is not available, use the current working directory and warn the user.
-2. **Resolve the target path.** `docs/plans/<TICKET-ID>.md`, lowercase ticket scope but preserve the canonical key (e.g. `FE-1234`). Create the `docs/plans/` directory if needed.
-3. **Handle overwrites.** If the file already exists:
+1. **Validate the TICKET-ID.** Whether it came from the user or was inferred from the plan, it MUST match `^[A-Z][A-Z0-9]+-\d+$` (e.g. `FE-1234`, `WEB-12`). If it does not match, stop and ask the user for a canonical ticket key - do NOT proceed with an unvalidated value. This is a security boundary: the ticket ID becomes part of the write path, so a value like `../../.github/workflows/ci` must never reach the `Write` tool.
+2. **Resolve the project root.** Use `git rev-parse --show-toplevel`. If git is not available, use the current working directory and warn the user.
+3. **Resolve the target path.** `docs/plans/<TICKET-ID>.md`, preserving the canonical key (e.g. `FE-1234`). Create the `docs/plans/` directory if needed. After building the path, confirm it still resolves inside `<project-root>/docs/plans/`; if it escapes that directory (contains `/`, `..`, or a leading separator once the validated key is substituted), refuse and stop.
+4. **Handle overwrites.** If the file already exists:
    - Read it. Show the user a 5-line summary of the old file and ask: "Overwrite, append a new section dated today, or cancel?". Default to overwrite if the only difference is whitespace/regeneration of the same plan.
    - On `append`: add a horizontal rule then a new `## Revision <ISO date>` section followed by the new plan body, leaving the original intact.
-4. **Render the template.** Use exactly this structure:
+5. **Render the template.** Use exactly this structure:
 
    ```markdown
    # <TICKET-ID> - <Summary>
@@ -62,15 +63,15 @@ If no plan is found in this conversation, stop and tell the user to run `/fe-too
 
    If a section is missing from the in-chat plan, render it with `_Not specified._` rather than omitting it - this keeps the template stable.
 
-5. **Write.** Use the `Write` tool. Do not auto-stage or auto-commit; that is the user's choice (`/fe-toolkit:commit` can do it next).
+6. **Write.** Use the `Write` tool. Do not auto-stage or auto-commit; that is the user's choice (`/fe-toolkit:commit` can do it next).
 
-6. **Report.** Reply with:
+7. **Report.** Reply with:
    - The path as a markdown link, e.g. `Saved to [docs/plans/FE-1234.md](docs/plans/FE-1234.md).`
    - A one-line nudge: `Run /fe-toolkit:commit to commit it with a conventional message (e.g. \`docs(plans): add FE-1234 development plan\`).`
 
 ## Hard rules
 
-- NEVER write outside `docs/plans/` from this skill.
+- NEVER write outside `docs/plans/` from this skill. Enforce this structurally: validate the TICKET-ID against `^[A-Z][A-Z0-9]+-\d+$` and verify the resolved path stays inside `<project-root>/docs/plans/` before calling `Write` - do not rely on the ticket ID being well-formed.
 - NEVER include secrets in the rendered file; if the plan accidentally quoted one, redact it as `<redacted>` and warn the user.
 - NEVER run `git add` or `git commit` from this skill.
 - ALWAYS use UTF-8 LF line endings.
