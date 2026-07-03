@@ -44,6 +44,7 @@ Copy this checklist and track progress:
 - [ ] Step 2: Discover code paths in www for the route (web platform only)
 - [ ] Step 2.5: Consult Modern Web Guidance (browserslist-gated)
 - [ ] Step 3: Rank optimization hypotheses (cite MWG guide ids + fallback per feature)
+- [ ] Step 3.5: Adversarial self-review of the hypotheses; revise/downgrade before presenting
 - [ ] GATE 2: user picks a hypothesis
 - [ ] Step 4: Render per-device experiment proposal doc(s)
 - [ ] GATE 3 (optional): scaffold experimentV2 config + selector stubs
@@ -164,9 +165,21 @@ Produce 2-4 hypotheses for the chosen target, each as a row with: description, e
 
 Ground each hypothesis in both Step 2 `path:line` citations and Step 2.5 MWG guide(s). When MWG was skipped, omit the guide-id column and state compat assessment from code knowledge only.
 
+### Step 3.5 - Adversarial self-review
+
+Before presenting hypotheses at GATE 2, re-read them as a skeptical reviewer actively trying to find why each one is wrong or weaker than it looks. This is a self-critique pass, not a formality — do not skip it or rubber-stamp your own Step 3 output. For every hypothesis, attack it on:
+
+1. **Causality vs. correlation**: is the code-cited cause actually the dominant driver of the metric on this route+device, or could an upstream factor (e.g. TTFB, a shared layout component, a third-party script) explain the regression just as well? Downgrade confidence if the evidence is circumstantial.
+2. **Guardrail conflicts**: could this specific optimization improve the headline metric while regressing one of the other two CWVs or `sample_count`? (e.g. inlining CSS helps LCP but adds parse cost that can hurt INP; deferring content helps INP but can shift layout and hurt CLS.) Name the plausible conflict, or state why there is none.
+3. **Fallback equivalence**: for any feature flagged out-of-target in Step 2.5, is the proposed fallback actually functionally equivalent, or a degraded experience dressed up as a fallback? Reject fallbacks that silently change behavior for unsupported browsers.
+4. **Traffic sufficiency**: given `total_samples` for this exact route+device from Step 1, is there plausibly enough daily volume for the variant split to reach a stable P75 in a reasonable runtime? Flag hypotheses on low-traffic routes as slower to validate.
+5. **Rollback feasibility**: is the stated rollback actually a clean revert (config flip), or does the optimization touch something (SSR markup shape, cache keys, route structure) that makes "revert" more involved than it sounds?
+
+Apply the outcome directly: lower the confidence/risk rating, add a caveat, or drop a hypothesis that does not survive this pass — do not just log the critique and leave the hypothesis unchanged. When you present the shortlist at GATE 2, briefly note anything you downgraded or dropped and why, so the user sees the review happened rather than just the polished result.
+
 ### GATE 2 - Pick a hypothesis
 
-Recommend the best impact-to-risk hypothesis and ask the user to confirm or pick another. Do not proceed until they pick.
+Recommend the best impact-to-risk hypothesis (post-review) and ask the user to confirm or pick another. Do not proceed until they pick.
 
 ### Step 4 - Render the experiment proposal
 
@@ -213,3 +226,4 @@ Only if the user explicitly asks, scaffold the **inert** experimentV2 wiring (no
 - ALWAYS scope optimizations to the **web** platform (`platform = 'web'` in data; web app code paths in www only).
 - ALWAYS gate MWG feature recommendations on www's resolved browserslist; any out-of-target feature MUST ship a concrete fallback or the hypothesis is dropped/redesigned.
 - ALWAYS consult MWG at Step 2.5 when network is available; note in the proposal when it was skipped.
+- ALWAYS run the Step 3.5 adversarial self-review before GATE 2; surface anything you downgraded or dropped instead of silently smoothing it over.
