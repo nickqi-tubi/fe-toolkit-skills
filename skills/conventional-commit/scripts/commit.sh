@@ -94,6 +94,13 @@ case "$subject" in
     die "subject must not end with a period" 2
     ;;
 esac
+# The subject is the header's single line; a newline would spill into the body
+# and break the "first line is the header" contract.
+case "$subject" in
+  *$'\n'*)
+    die "subject must be a single line (no newlines)" 2
+    ;;
+esac
 
 if (( breaking )) && [[ -z "$breaking_desc" ]]; then
   breaking_desc="$subject"
@@ -101,8 +108,11 @@ fi
 
 header="$type"
 if [[ -n "$scope" ]]; then
-  if [[ "$scope" =~ [[:upper:][:space:]] ]]; then
-    die "scope must be lowercase, no spaces: $scope" 2
+  # Scope must be lowercase kebab-case only. Besides matching the convention,
+  # this blocks characters like ')' or ':' that would corrupt the header, e.g.
+  # a scope of "foo)bar" producing "feat(foo)bar): ...".
+  if [[ ! "$scope" =~ ^[a-z0-9-]+$ ]]; then
+    die "scope must be lowercase kebab-case (a-z, 0-9, -): $scope" 2
   fi
   header="${header}(${scope})"
 fi

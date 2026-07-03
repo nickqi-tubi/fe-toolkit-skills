@@ -128,6 +128,12 @@ fi
 if [[ -n "$device" ]]; then
   case "$device" in mobile|desktop) ;; *) die "invalid --device '$device'" 2 ;; esac
 fi
+# A ROUTE_ID is an alphanumeric token (H, MD, TS1, OTH, ...). Reject anything
+# else: --route is interpolated into the SQL string, so an unvalidated value
+# (e.g. "H' OR 1=1 --") would be a SQL-injection vector.
+if [[ -n "$route" ]]; then
+  [[ "$route" =~ ^[A-Za-z0-9]+$ ]] || die "invalid --route '$route' (expected an alphanumeric ROUTE_ID)" 2
+fi
 
 if [[ "$mode" == "trend" ]]; then
   [[ -n "$metric" && -n "$device" && -n "$route" ]] \

@@ -10,6 +10,8 @@ Persist the development plan that was just produced in this conversation to a ma
 - Optional ticket ID override: `$ARGUMENTS`
 - Otherwise, infer the ticket ID from the most recent plan in this conversation (it should appear in the plan's title and a `**Jira:**` line).
 
+The ticket ID (from either source) must match `^[A-Z][A-Z0-9]+-\d+$` before it is used - the `save-plan` skill re-validates this because the value becomes part of the write path. If `$ARGUMENTS` is a non-conforming value, do not pass it through; ask the user for a canonical key.
+
 ## Procedure
 
 Invoke the `save-plan` skill. The skill knows the template, the destination path, and how to handle overwrites. Follow its instructions exactly.
