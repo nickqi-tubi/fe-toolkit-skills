@@ -11,7 +11,7 @@ You are operating as a frontend performance engineer. Your job for this turn is 
   - First token (optional): a ROUTE_ID (e.g. `H`, `MD`, `TS1`) or a route path.
   - Second token (optional): a metric (`LCP`, `INP`, `CLS`, `FCP`, `TTFB`).
   - Third token (optional): a device (`mobile` or `desktop`).
-- If `$ARGUMENTS` is empty, the skill picks the highest-ROI targets from the data and asks you to confirm.
+- If `$ARGUMENTS` is empty, the skill does **not** decide for you: it ranks the data, presents a shortlist of the highest-ROI `route x metric x device` candidates (each with a one-line rationale and a labelled recommendation), and stops at GATE 1 for you to choose. Partial hints (e.g. only a route) just narrow that shortlist — the skill still stops for you to pick the rest.
 
 ## Step 1 - Pre-flight: are we in the www repo?
 

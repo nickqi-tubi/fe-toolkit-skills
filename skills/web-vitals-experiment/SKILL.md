@@ -39,7 +39,7 @@ Copy this checklist and track progress:
 ```
 - [ ] Step 0: Build the ROUTE_ID -> route map from www
 - [ ] Step 1: Query + rank targets (mobile & desktop separately)
-- [ ] GATE 1: user picks route x metric (x device)
+- [ ] GATE 1: present candidate shortlist + recommendation, STOP; developer picks route x metric (x device)
 - [ ] Step 2: Discover code paths in www for the route
 - [ ] Step 3: Rank optimization hypotheses
 - [ ] GATE 2: user picks a hypothesis
@@ -73,7 +73,30 @@ Present **two ranked tables, mobile and desktop separately**, each filtered to t
 
 ### GATE 1 - Pick the target
 
-Recommend the top-scoring `route x metric x device` (prefer `poor` status and high `total_samples`). If the user passed hints, pre-select them. Ask the user to confirm or choose another. Do not proceed until they pick. If they want both devices for one route+metric, you will produce two proposals.
+**This is a hard stop. You present options; the developer decides. Never auto-advance to Step 2 on your own judgement.**
+
+Below the two ranked tables, output a short **candidate shortlist** — the top 3-5 `route x metric x device` targets — as a numbered list the developer can pick from. For each candidate give one line of rationale so the choice is informed, not blind:
+
+```
+Recommended targets (pick one, or name your own route x metric x device):
+
+1. [RECOMMENDED] movieDetail (MD) · LCP · mobile — w_p75 4.8s (poor), 1.2M samples/28d.
+   Highest score: worst GSC band on the highest-traffic SEO route; moving it flips a whole GSC group.
+2. home (H) · LCP · mobile — w_p75 3.1s (needs-improvement), 3.4M samples/28d.
+   Most traffic overall; smaller gap but a small win touches the most users.
+3. tvShowDetail (TS) · CLS · desktop — w_p75 0.28 (poor), 240k samples/28d.
+   Only poor CLS route; layout-shift fixes are usually low-risk.
+
+Which target should the experiment optimize? (reply with a number, or your own route/metric/device)
+```
+
+Rules for this gate:
+
+- **If the user pinned all three of route + metric + device via `$ARGUMENTS`**, treat that as the choice: echo the matching row for confirmation and you may proceed once confirmed.
+- **If the user pinned only some dimensions** (e.g. just a route, or just a metric), filter the shortlist to what they pinned and still stop for them to choose among the remaining candidates. Do not fill in the missing dimensions yourself.
+- **If the user passed no args**, always present the shortlist above and stop. Do not pick for them even when there is an obvious top score — label your top pick `[RECOMMENDED]` and explain why, but wait for their reply.
+- Prefer `poor` status and high `total_samples` when ordering the shortlist and choosing which one to mark `[RECOMMENDED]`.
+- Do not proceed to Step 2 until the developer has explicitly named a target. If they want both devices for one route+metric, produce two proposals.
 
 ### Step 2 - Discover code paths
 
@@ -130,6 +153,7 @@ Only if the user explicitly asks, scaffold the **inert** experimentV2 wiring (no
 
 ## Hard rules
 
+- NEVER auto-select the target at GATE 1 when the developer has not pinned all of route + metric + device. Present the candidate shortlist with a labelled recommendation and STOP for their explicit choice — a clear top score is a recommendation to surface, not a decision to make for them. The same "recommend, then wait" rule holds at GATE 2.
 - NEVER write outside `doc/web-vitals/` unless GATE 3 scaffolding was explicitly approved.
 - NEVER silently overwrite an existing proposal doc; confirm with the user first.
 - NEVER pick LCP/INP/CLS *and* a diagnostic (FCP/TTFB) as co-headline metrics — one headline CWV per experiment.
