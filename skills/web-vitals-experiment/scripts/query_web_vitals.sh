@@ -12,7 +12,8 @@
 # Usage:
 #   query_web_vitals.sh [--mode rank|trend] [--metric LCP|INP|CLS|FCP|TTFB]
 #                       [--device mobile|desktop] [--route <ROUTE_ID>]
-#                       [--days N] [--warehouse <id>] [--format tsv|json]
+#                       [--days N] [--warehouse <id>] [--profile <name>]
+#                       [--format tsv|json]
 #
 #   --mode    rank  (default) ranked targets over the window.
 #             trend daily P75 + sample_count series (needs --metric, --device,
@@ -22,11 +23,15 @@
 #   --route   filter to one ROUTE_ID / dimension_key (trend: required).
 #   --days    look-back window in days (default 28, matching the GSC window).
 #   --warehouse  SQL warehouse id; default = first RUNNING warehouse.
+#   --profile Databricks CLI profile whose host is
+#             https://tubi-dev.cloud.databricks.com. Default: auto-resolved by
+#             host from `databricks auth profiles --output json`. Fails closed if
+#             no profile matches that host.
 #   --format  tsv (default, tab-separated with header) or json.
 #
 # Exit codes:
 #   0 success            2 bad usage
-#   3 no running warehouse / databricks CLI unusable
+#   3 no running warehouse / databricks CLI unusable / no tubi-dev profile
 #   4 query failed
 #
 # Notes:
@@ -45,7 +50,10 @@ device=""
 route=""
 days="28"
 warehouse=""
+profile=""
 format="tsv"
+
+TUBI_DEV_HOST="https://tubi-dev.cloud.databricks.com"
 
 die() { printf 'query_web_vitals.sh: %s\n' "$1" >&2; exit "${2:-2}"; }
 
@@ -57,6 +65,7 @@ while [[ $# -gt 0 ]]; do
     --route)     route="${2:-}"; shift 2 ;;
     --days)      days="${2:-}"; shift 2 ;;
     --warehouse) warehouse="${2:-}"; shift 2 ;;
+    --profile)   profile="${2:-}"; shift 2 ;;
     --format)    format="${2:-}"; shift 2 ;;
     -h|--help)   sed -n '2,40p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" 2 ;;
@@ -67,8 +76,47 @@ case "$mode" in rank|trend) ;; *) die "invalid --mode '$mode'" 2 ;; esac
 case "$format" in tsv|json) ;; *) die "invalid --format '$format'" 2 ;; esac
 [[ "$days" =~ ^[0-9]+$ ]] || die "--days must be a positive integer" 2
 
-command -v databricks >/dev/null 2>&1 || die "databricks CLI not found; install it and run 'databricks auth login'" 3
+command -v databricks >/dev/null 2>&1 || die "databricks CLI not found; install it and run 'databricks auth login --host ${TUBI_DEV_HOST}'" 3
 command -v python3 >/dev/null 2>&1 || die "python3 not found (needed to build/parse the request)" 3
+
+# --- resolve a Databricks CLI profile bound to the tubi-dev workspace --------
+# The CLI otherwise falls back to the default profile / DATABRICKS_* env vars,
+# which may point at a different workspace even after /fe-toolkit:auth reports
+# tubi-dev healthy. Match by host, not by profile name (name is user-chosen);
+# fail closed if nothing matches. Explicit --profile is also host-validated —
+# a manually-passed profile is still refused if it does not point at tubi-dev.
+profile="$(TUBI_DEV_HOST="$TUBI_DEV_HOST" REQ_PROFILE="$profile" python3 - <<'PY' 2>/dev/null
+import json, os, subprocess, sys
+target = os.environ["TUBI_DEV_HOST"].rstrip("/")
+requested = os.environ.get("REQ_PROFILE") or ""
+out = subprocess.run(
+    ["databricks", "auth", "profiles", "--output", "json"],
+    capture_output=True, text=True,
+)
+if out.returncode != 0:
+    sys.exit(1)
+try:
+    profiles = json.loads(out.stdout).get("profiles", []) or []
+except json.JSONDecodeError:
+    sys.exit(1)
+candidates = [
+    p for p in profiles
+    if p.get("host", "").rstrip("/") == target and p.get("valid")
+]
+if requested:
+    for p in candidates:
+        if p.get("name") == requested:
+            print(p["name"])
+            sys.exit(0)
+    sys.exit(2)  # explicit profile does not match tubi-dev host or is invalid
+elif candidates:
+    print(candidates[0]["name"])
+PY
+)" || true
+
+if [[ -z "$profile" ]]; then
+  die "no valid Databricks CLI profile for ${TUBI_DEV_HOST}; run: databricks auth login --host ${TUBI_DEV_HOST}" 3
+fi
 
 # Uppercase metric, lowercase device, for forgiving input.
 metric="$(printf '%s' "$metric" | tr '[:lower:]' '[:upper:]')"
@@ -88,9 +136,9 @@ fi
 
 # --- resolve a RUNNING warehouse -------------------------------------------
 if [[ -z "$warehouse" ]]; then
-  warehouse="$(databricks warehouses list 2>/dev/null \
+  warehouse="$(databricks warehouses list -p "$profile" 2>/dev/null \
     | awk 'NR>1 && $NF=="RUNNING" {print $1; exit}')"
-  [[ -n "$warehouse" ]] || die "no RUNNING SQL warehouse found; pass --warehouse <id> or start one in Databricks" 3
+  [[ -n "$warehouse" ]] || die "no RUNNING SQL warehouse found on profile '$profile'; pass --warehouse <id> or start one in Databricks" 3
 fi
 
 # --- build SQL --------------------------------------------------------------
@@ -159,13 +207,14 @@ json.dump({
 }, open(sys.argv[1], "w"))
 PY
 
-databricks api post /api/2.0/sql/statements --json "@${payload_file}" > "$resp_file" 2>/dev/null \
+databricks api post -p "$profile" /api/2.0/sql/statements --json "@${payload_file}" > "$resp_file" 2>/dev/null \
   || die "statement submit failed (databricks api post returned non-zero)" 4
 
 # Poll in place until the statement reaches a terminal state.
-python3 - "$resp_file" <<'PY'
-import json, subprocess, sys, time
+DATABRICKS_PROFILE="$profile" python3 - "$resp_file" <<'PY'
+import json, os, subprocess, sys, time
 f = sys.argv[1]
+profile = os.environ["DATABRICKS_PROFILE"]
 resp = json.load(open(f))
 
 def state(r): return r.get("status", {}).get("state", "")
@@ -175,7 +224,7 @@ deadline = time.time() + 180
 while state(resp) in ("PENDING", "RUNNING") and sid and time.time() < deadline:
     time.sleep(2)
     out = subprocess.run(
-        ["databricks", "api", "get", f"/api/2.0/sql/statements/{sid}"],
+        ["databricks", "api", "get", "-p", profile, f"/api/2.0/sql/statements/{sid}"],
         capture_output=True, text=True,
     )
     if out.returncode != 0:

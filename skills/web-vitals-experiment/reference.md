@@ -73,13 +73,13 @@ WHERE platform = 'web' AND ts >= date_sub(current_date(), 28)
 ORDER BY ts;
 ```
 
-To run ad-hoc SQL outside the script, submit via the CLI:
+To run ad-hoc SQL outside the script, submit via the CLI. **Always pass `-p <profile>`** where `<profile>` is the local profile whose host is `https://tubi-dev.cloud.databricks.com` (the script resolves this automatically; `databricks auth profiles` lists candidates):
 
 ```bash
-databricks api post /api/2.0/sql/statements --json '{"warehouse_id":"<id>","statement":"<sql>","wait_timeout":"30s","format":"JSON_ARRAY","disposition":"INLINE"}'
+databricks api post -p <profile> /api/2.0/sql/statements --json '{"warehouse_id":"<id>","statement":"<sql>","wait_timeout":"30s","format":"JSON_ARRAY","disposition":"INLINE"}'
 ```
 
-Find a running warehouse with `databricks warehouses list` (the script picks the first `RUNNING` row).
+Find a running warehouse with `databricks warehouses list -p <profile>` (the script picks the first `RUNNING` row).
 
 ## ROUTE_ID map
 
