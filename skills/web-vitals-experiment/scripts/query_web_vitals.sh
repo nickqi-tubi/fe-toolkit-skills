@@ -25,7 +25,12 @@
 #             and a multiple of 7 to cancel day-of-week seasonality; the data
 #             is our own telemetry, so this is not tied to any GSC window).
 #   --min-samples  rank mode: cumulative cold-navigate samples over the window
-#             below which a cohort is flagged confidence=low (default 100000).
+#             below which a cohort's weighted P75 is too noisy to trust as a
+#             ranking signal, so it is flagged confidence=low (default 10000).
+#             This is a ranking-reliability floor, not an experiment-runtime
+#             estimate - whether a specific chosen target has enough daily
+#             volume to reach a fast experiment verdict is judged later, with
+#             full context, by the Step 3.5 "Traffic sufficiency" review.
 #   --warehouse  SQL warehouse id; default = first RUNNING warehouse.
 #   --profile Databricks CLI profile whose host is
 #             https://tubi-dev.cloud.databricks.com. Default: auto-resolved by
@@ -43,9 +48,10 @@
 #     actionable, separately-implemented cohorts.
 #   - rank score = max((w_p75 - good_threshold)/good_threshold, 0) * total_samples
 #     so it is comparable across metrics with different units.
-#   - rank mode adds a `confidence` column (ok|low): low means total_samples over
-#     the window is under --min-samples, so the weighted P75 is too noisy to
-#     trust for ranking. Down-weight low-confidence rows when picking a target.
+#   - rank mode adds a `confidence` column (ok|low): low means total_samples
+#     over the window is under --min-samples, so the weighted P75 itself is
+#     too noisy to rank on. It does not say anything about experiment
+#     runtime for a chosen target - that judgment belongs to Step 3.5.
 
 set -euo pipefail
 
@@ -60,9 +66,10 @@ warehouse=""
 profile=""
 format="tsv"
 # Cumulative cold-navigate samples (over the window) below which a ranked
-# cohort's weighted P75 is too noisy to trust; such rows are flagged
-# confidence=low so the shortlist step can down-weight them.
-min_samples="100000"
+# cohort's weighted P75 is too noisy to trust as a ranking signal; such rows
+# are flagged confidence=low. This is a ranking-reliability floor, not an
+# experiment-runtime estimate (see Step 3.5 "Traffic sufficiency" for that).
+min_samples="10000"
 
 TUBI_DEV_HOST="https://tubi-dev.cloud.databricks.com"
 
@@ -79,7 +86,7 @@ while [[ $# -gt 0 ]]; do
     --warehouse) warehouse="${2:-}"; shift 2 ;;
     --profile)   profile="${2:-}"; shift 2 ;;
     --format)    format="${2:-}"; shift 2 ;;
-    -h|--help)   sed -n '2,48p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,54p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" 2 ;;
   esac
 done

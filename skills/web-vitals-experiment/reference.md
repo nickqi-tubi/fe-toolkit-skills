@@ -26,13 +26,13 @@ For each `(device_type, metric_type, dimension_key)` over the look-back window (
 w_p75        = SUM(p75 * sample_count) / SUM(sample_count)   -- weighted-mean approximation of period P75
 total_samples = SUM(sample_count)
 score        = MAX((w_p75 - good_thr) / good_thr, 0) * total_samples
-confidence   = 'low' if total_samples < min_samples else 'ok'  -- min_samples default 100000
+confidence   = 'low' if total_samples < min_samples else 'ok'  -- min_samples default 10000
 ```
 
 - `w_p75` is an approximation: a true period P75 cannot be recomputed from per-day P75s. It is good enough for ranking and for a rough before-number; the real verdict comes from the experiment's own P75.
 - Dividing the gap by `good_thr` makes the score comparable across metrics that have different units.
 - Multiplying by traffic favors routes whose worst band moves fastest.
-- `confidence = low` marks cohorts with too few window samples for a stable weighted P75; treat their ranking with caution (see SKILL.md GATE 1).
+- `confidence = low` marks cohorts with too few window samples for the weighted P75 **itself** to be a trustworthy ranking number (default floor: 10k cumulative cold-navigate samples over the window, roughly a few hundred/day). This is deliberately a low, ranking-reliability-only bar — it is not a proxy for "can an experiment on this target reach a verdict quickly." That is a separate, per-target question that Step 3.5 "Traffic sufficiency" answers later with full context, once a single target has been picked; conflating the two would flag the majority of legitimate mid-traffic routes as unreliable when their ranking is actually fine.
 - Ranking is per device. Mobile is usually the SEO-critical bucket; still rank desktop separately.
 
 ## SQL cookbook
